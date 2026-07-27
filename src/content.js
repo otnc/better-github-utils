@@ -17,9 +17,13 @@
     }
   } catch (e) {}
 
+  const _moduleCache = new Map();
   async function ensure(modPath) {
+    if (_moduleCache.has(modPath)) return _moduleCache.get(modPath);
     try {
-      return await import(chrome.runtime.getURL(modPath));
+      const mod = await import(chrome.runtime.getURL(modPath));
+      _moduleCache.set(modPath, mod);
+      return mod;
     } catch (e) {
       try {
         console.warn(
@@ -28,6 +32,7 @@
           e && e.message ? e.message : e,
         );
       } catch (e2) {}
+      _moduleCache.set(modPath, null);
       return null;
     }
   }
@@ -156,8 +161,28 @@
     const profile = getProfileFromPath();
     const viewer = getCurrentUser();
     if (!profile || !viewer) return false;
-    if (profile && profile !== viewer) return true;
-    return false;
+    return profile !== viewer;
+  }
+
+  async function resolveFollowStatus(viewer, name) {
+    const client = await ensure("src/utils/follow/client.js");
+    const useBulk = shouldUseBulkChecks();
+    if (useBulk && client) {
+      return client.getFollowStatusOnce(viewer, name).catch(() => null);
+    }
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { type: "checkFollow", viewer, target: name },
+        (r) => {
+          if (chrome.runtime.lastError) {
+            console.warn("[gh-utils] checkFollow msg failed", chrome.runtime.lastError);
+            resolve(null);
+            return;
+          }
+          resolve(r || null);
+        },
+      );
+    });
   }
 
   async function handleButton(btn) {
@@ -175,8 +200,8 @@
     if (!viewer) return;
     const name = dom.extractUsernameFromButton(btn);
     if (!name) return;
-    const container =
-      btn.closest(".d-table") || btn.closest("li") || btn.closest("div");
+    // Skip if the extracted name is a non-user path (e.g., /explore, /settings)
+    if (IGNORED_PATHS.includes(name.toLowerCase())) return;
     if (isOwnFollowers()) {
       const badge = dom.createBadge("followed", "github-utils-list-badge");
       dom.appendBadgeToChecker(btn, badge);
@@ -187,32 +212,7 @@
       "github-utils-list-badge",
     );
 
-    const useBulk = shouldUseBulkChecks();
-    let resp = null;
-    try {
-      if (useBulk) {
-        resp = await client.getFollowStatusOnce(viewer, name).catch(() => null);
-      } else {
-        resp = await new Promise((resolve) =>
-          chrome.runtime.sendMessage(
-            { type: "checkFollow", viewer, target: name },
-            (r) => {
-              if (chrome.runtime.lastError) {
-                console.warn(
-                  "[gh-utils] checkFollow msg failed",
-                  chrome.runtime.lastError,
-                );
-                resolve(null);
-                return;
-              }
-              resolve(r || null);
-            },
-          ),
-        );
-      }
-    } catch (e) {
-      resp = null;
-    }
+    const resp = await resolveFollowStatus(viewer, name);
 
     if (!resp) {
       dom.replaceWithBadge(placeholder, "unknown", "github-utils-list-badge");
@@ -245,6 +245,10 @@
       try {
         if (b.hidden || b.hasAttribute("hidden") || b.offsetParent === null)
           return;
+        // Skip buttons inside feed items (articles) — scanFeed handles those
+        if (b.closest("article")) return;
+        // Skip buttons inside hovercards/popups — scanHover handles those
+        if (b.closest("[data-hovercard-url], .Popover, .Popover-message")) return;
         // scope the duplicate check to the button's own row/container so multiple users in the same broader item can each get badges
         const row =
           b.closest(".d-table") || b.closest("li") || b.closest("div");
@@ -594,11 +598,12 @@
               const headerName = (headerAnchor.getAttribute("href") || "")
                 .replace(/^\//, "")
                 .replace(/\/$/, "");
-              // skip invalid names / viewer / already-handled usernames
+              // skip invalid names / viewer / already-handled usernames / non-user paths
               if (
                 !headerName ||
                 headerName === viewer ||
-                namesSeen.has(headerName)
+                namesSeen.has(headerName) ||
+                IGNORED_PATHS.includes(headerName.toLowerCase())
               ) {
                 // nothing to do here
               } else {
@@ -686,10 +691,7 @@
                       (async () => {
                         try {
                           const dom = await ensure("src/utils/follow/dom.js");
-                          const client = await ensure(
-                            "src/utils/follow/client.js",
-                          );
-                          if (!dom || !client) {
+                          if (!dom) {
                             dom &&
                               dom.replaceWithBadge(
                                 placeholder,
@@ -698,30 +700,7 @@
                               );
                             return;
                           }
-                          const name = headerName;
-                          const useBulk = shouldUseBulkChecks();
-                          let resp = null;
-                          if (useBulk)
-                            resp = await client
-                              .getFollowStatusOnce(viewer, name)
-                              .catch(() => null);
-                          else
-                            resp = await new Promise((resolve) =>
-                              chrome.runtime.sendMessage(
-                                { type: "checkFollow", viewer, target: name },
-                                (r) => {
-                                  if (chrome.runtime.lastError) {
-                                    console.warn(
-                                      "[gh-utils] checkFollow msg failed (feed header)",
-                                      chrome.runtime.lastError,
-                                    );
-                                    resolve(null);
-                                    return;
-                                  }
-                                  resolve(r || null);
-                                },
-                              ),
-                            );
+                          const resp = await resolveFollowStatus(viewer, headerName);
                           if (!resp)
                             dom.replaceWithBadge(
                               placeholder,
@@ -764,7 +743,11 @@
               const name = href.replace(/^\//, "").replace(/\/$/, "");
               if (!name || name.indexOf("/") !== -1) return;
               if (name === viewer) return;
-              // In repo-showing cards (STARRED/TRENDING/RECOMMENDATION/ADDED_TO_LIST), skip anchors that are part of the repo owner/repo area (we don't badge those users)
+              // Skip anchors that are not user profiles (e.g., /explore, /settings)
+              if (IGNORED_PATHS.includes(name.toLowerCase())) return;
+              // Skip anchors inside hovercards/popups — scanHover handles those
+              if (a.closest("[data-hovercard-url], .Popover, .Popover-message")) return;
+              // In repo-showing cards (STARRED/TRENDING/RECOMMENDATION/ADDED_TO_LIST), skip anchors that are part of the repo area entirely
               if (
                 (isStarredEvent ||
                   isTrendingEvent ||
@@ -772,24 +755,17 @@
                   isAddedToListEvent) &&
                 repoAnchors.length
               ) {
-                try {
-                  const ownerAnchor = a;
-                  const ownerNearRepo = repoAnchors.some((ra) => {
-                    try {
-                      return (
-                        ra.closest("section") ===
-                          ownerAnchor.closest("section") ||
-                        ra.closest("div") === ownerAnchor.closest("div") ||
-                        ra.parentElement === ownerAnchor.parentElement ||
-                        ra.closest(".color-bg-subtle") ===
-                          ownerAnchor.closest(".color-bg-subtle")
-                      );
-                    } catch (e) {
-                      return false;
-                    }
-                  });
-                  if (ownerNearRepo) return;
-                } catch (e) {}
+                // Check if this anchor's user is the owner of any repo in the card
+                const isRepoOwner = repoAnchors.some((ra) => {
+                  try {
+                    const repoHref = ra.getAttribute("href") || "";
+                    const repoParts = repoHref.replace(/^\//, "").split("/");
+                    return repoParts[0] && repoParts[0].toLowerCase() === name.toLowerCase();
+                  } catch (e) {
+                    return false;
+                  }
+                });
+                if (isRepoOwner) return;
               }
               if (namesSeen.has(name)) return;
 
@@ -830,6 +806,10 @@
                   return false;
                 }
               });
+
+              // For non-follow events, only show badge when a follow button exists nearby
+              // This prevents badges on incidental references (e.g., repo owners, commenters)
+              if (!isFollowEvent && !followBtn) return;
 
               // avoid duplicating adjacent badges
               if (followBtn) {
@@ -959,8 +939,7 @@
               (async () => {
                 try {
                   const dom = await ensure("src/utils/follow/dom.js");
-                  const client = await ensure("src/utils/follow/client.js");
-                  if (!dom || !client) {
+                  if (!dom) {
                     dom &&
                       dom.replaceWithBadge(
                         placeholder,
@@ -969,29 +948,7 @@
                       );
                     return;
                   }
-                  const useBulk = shouldUseBulkChecks();
-                  let resp = null;
-                  if (useBulk)
-                    resp = await client
-                      .getFollowStatusOnce(viewer, name)
-                      .catch(() => null);
-                  else
-                    resp = await new Promise((resolve) =>
-                      chrome.runtime.sendMessage(
-                        { type: "checkFollow", viewer, target: name },
-                        (r) => {
-                          if (chrome.runtime.lastError) {
-                            console.warn(
-                              "[gh-utils] checkFollow msg failed (feed)",
-                              chrome.runtime.lastError,
-                            );
-                            resolve(null);
-                            return;
-                          }
-                          resolve(r || null);
-                        },
-                      ),
-                    );
+                  const resp = await resolveFollowStatus(viewer, name);
                   if (!resp)
                     dom.replaceWithBadge(
                       placeholder,
@@ -1042,6 +999,7 @@
           .replace(/\/$/, "");
         const viewer = getCurrentUser();
         if (!name || name === viewer) return;
+        if (IGNORED_PATHS.includes(name.toLowerCase())) return;
         if (
           card.querySelector(
             ".github-utils-hover-badge, .github-utils-list-badge",
@@ -1073,38 +1031,11 @@
         if (followBtn) {
           followBtn.insertAdjacentElement("afterend", placeholder);
         } else targetEl.appendChild(placeholder);
-        ensure("src/utils/follow/client.js")
-          .then(async (client) => {
-            if (!client) return;
+        (async () => {
+          try {
             const viewer = getCurrentUser();
-            const useBulk = (function () {
-              const profile = getProfileFromPath();
-              return profile && viewer && profile !== viewer;
-            })();
-            let resp = null;
-            try {
-              if (useBulk)
-                resp = await client.getFollowStatusOnce(viewer, name);
-              else
-                resp = await new Promise((resolve) =>
-                  chrome.runtime.sendMessage(
-                    { type: "checkFollow", viewer, target: name },
-                    (r) => {
-                      if (chrome.runtime.lastError) {
-                        console.warn(
-                          "[gh-utils] checkFollow msg failed (hover)",
-                          chrome.runtime.lastError,
-                        );
-                        resolve(null);
-                        return;
-                      }
-                      resolve(r || null);
-                    },
-                  ),
-                );
-            } catch (e) {
-              resp = null;
-            }
+            if (!viewer) return;
+            const resp = await resolveFollowStatus(viewer, name);
             if (!resp)
               dom.replaceWithBadge(
                 placeholder,
@@ -1117,8 +1048,8 @@
                 resp.targetFollowsViewer ? "followed" : "not_followed",
                 "github-utils-hover-badge",
               );
-          })
-          .catch(() => {});
+          } catch (e) {}
+        })();
       })
       .catch(() => {});
   }

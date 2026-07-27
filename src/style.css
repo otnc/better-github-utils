@@ -140,11 +140,6 @@ article:has(.github-utils-checker .github-utils-follow-badge)
     box-shadow 0.12s ease;
 }
 
-.gh-autoc-btn[data-action] {
-  background: #d73a49;
-  color: #fff;
-}
-
 .gh-autoc-btn:hover {
   background: #b22a3a;
   transform: translateY(-1px);
@@ -153,9 +148,6 @@ article:has(.github-utils-checker .github-utils-follow-badge)
   outline: none;
   box-shadow: 0 6px 20px rgba(215, 58, 73, 0.18);
   border-color: rgba(215, 58, 73, 0.35);
-  margin-top: 6px;
-  font-size: 12px;
-  color: #666;
 }
 
 .gh-autoc-inline {
@@ -171,9 +163,6 @@ article:has(.github-utils-checker .github-utils-follow-badge)
   padding: 6px 10px;
   font-size: 13px;
   border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #d73a49;
-  color: #fff;
 }
 .gh-autoc-opt {
   font-size: 12px;

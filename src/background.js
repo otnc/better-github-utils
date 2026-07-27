@@ -134,8 +134,12 @@ function itemsToSet(items) {
   return set;
 }
 
+const _authCache = { login: null, fetchedAt: 0 };
 async function getAuthenticatedUser(token) {
   if (!token) return null;
+  const now = Date.now();
+  if (_authCache.login && now - _authCache.fetchedAt < CACHE_TTL)
+    return _authCache.login;
   try {
     const headers = {
       Accept: "application/vnd.github.v3+json",
@@ -153,7 +157,9 @@ async function getAuthenticatedUser(token) {
       return null;
     }
     const json = await res.json();
-    return json && json.login ? json.login.toLowerCase() : null;
+    _authCache.login = json && json.login ? json.login.toLowerCase() : null;
+    _authCache.fetchedAt = Date.now();
+    return _authCache.login;
   } catch (e) {
     console.warn("[gh-utils] bg getAuthenticatedUser error", e);
     return null;
@@ -182,7 +188,7 @@ async function getFollowersList(username, token) {
   return itemsToSet(items);
 }
 
-async function checkFollowing(viewer, target) {
+async function checkFollowing(viewer, target, token) {
   const cacheKey = `${viewer.toLowerCase()}::${target.toLowerCase()}`;
   const now = Date.now();
 
@@ -200,7 +206,6 @@ async function checkFollowing(viewer, target) {
     _checkCache.delete(cacheKey);
   }
 
-  const token = await getToken();
   const headers = { Accept: "application/vnd.github.v3+json" };
   if (token) headers["Authorization"] = `token ${token}`;
   let viewerFollowsTarget = false;
@@ -250,7 +255,7 @@ async function checkFollowing(viewer, target) {
   return result;
 }
 
-async function getListsForUser(username) {
+async function getListsForUser(username, token) {
   const key = (username || "").toLowerCase();
   const now = Date.now();
 
@@ -267,7 +272,6 @@ async function getListsForUser(username) {
     _listsCache.delete(key);
   }
 
-  const token = await getToken();
   try {
     let result;
     if (token) {
@@ -310,17 +314,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             "[gh-utils] background: token missing — refusing to operate",
           );
         } catch (e) {}
-        if (msg.type === "checkFollow") {
-          sendResponse(null);
-          return;
-        }
-        if (msg.type === "getLists") {
-          sendResponse({ followers: [] });
-          return;
-        }
+        sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
+        return;
       }
 
-      if (msg && msg.type === "checkFollow") {
+      if (msg.type === "checkFollow") {
         const { viewer, target } = msg;
         if (!viewer || !target) {
           sendResponse(null);
@@ -331,14 +329,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             viewer,
             target,
           });
-          const res = await checkFollowing(viewer, target);
+          const res = await checkFollowing(viewer, target, token);
           if (!res) {
             console.warn(
               "[gh-utils] background: checkFollowing returned null",
-              {
-                viewer,
-                target,
-              },
+              { viewer, target },
             );
           } else {
             console.debug("[gh-utils] background: checkFollowing", {
@@ -358,14 +353,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
-      if (msg && msg.type === "getLists") {
+      if (msg.type === "getLists") {
         const { viewer } = msg;
         if (!viewer) {
           sendResponse({ followers: [] });
           return;
         }
         try {
-          const lists = await getListsForUser(viewer);
+          const lists = await getListsForUser(viewer, token);
           console.debug("[gh-utils] background: getLists", {
             viewer,
             counts: {
@@ -381,11 +376,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     } catch (e) {
       console.warn("[gh-utils] background: onMessage handler error", e);
-      // ensure we always respond to avoid leaving the sender waiting
       try {
-        if (msg && msg.type === "checkFollow") sendResponse(null);
-        else if (msg && msg.type === "getLists")
-          sendResponse({ followers: [] });
+        sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
       } catch (e2) {}
     }
   })();
