@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "axios": "^1.13.3",
+    "axios": "^1.18.1",
     "dotenv": "^17.2.3",
     "prettier": "^3.8.1"
   }
