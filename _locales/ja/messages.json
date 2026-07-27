@@ -4,7 +4,35 @@
     "description": "拡張機能名"
   },
   "extDesc": {
-    "message": "GitHubに様々な便利な機能を追加します(一部の機能にはAPI Keyが必要です)",
+    "message": "GitHubに様々な便利な機能を追加します（一部の機能にはAPI Keyが必要です）",
     "description": "拡張の説明"
+  },
+  "followed": {
+    "message": "フォローバックあり",
+    "description": "相手がフォローバックしていることを示します"
+  },
+  "not_followed": {
+    "message": "フォローバックなし",
+    "description": "相手がフォローバックしていないことを示します"
+  },
+  "mutual_follow": {
+    "message": "相互フォロー",
+    "description": "相互フォロー状態を示します"
+  },
+  "optionsTitle": {
+    "message": "オプション",
+    "description": "オプションページのタイトル"
+  },
+  "tokenLabel": {
+    "message": "Personal Access Token",
+    "description": "Personal Access Token 入力欄のラベル"
+  },
+  "save": {
+    "message": "保存",
+    "description": "保存ボタン"
+  },
+  "clear": {
+    "message": "クリア",
+    "description": "クリアボタン"
   }
 }
