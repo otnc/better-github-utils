@@ -185,8 +185,11 @@ export function findDeleteInput() {
     document.querySelector(
       'input[aria-label="Type the name of the repository to confirm"], input[name="verify"], input[placeholder*="owner/repo"]',
     ) ||
-    (document.querySelector('input[type="text"]')?.closest("form")
-      ?.querySelector('input[type="text"]') ?? null)
+    (document
+      .querySelector('input[type="text"]')
+      ?.closest("form")
+      ?.querySelector('input[type="text"]') ??
+      null)
   );
 }
 

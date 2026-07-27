@@ -175,7 +175,10 @@
         { type: "checkFollow", viewer, target: name },
         (r) => {
           if (chrome.runtime.lastError) {
-            console.warn("[gh-utils] checkFollow msg failed", chrome.runtime.lastError);
+            console.warn(
+              "[gh-utils] checkFollow msg failed",
+              chrome.runtime.lastError,
+            );
             resolve(null);
             return;
           }
@@ -248,7 +251,8 @@
         // Skip buttons inside feed items (articles) — scanFeed handles those
         if (b.closest("article")) return;
         // Skip buttons inside hovercards/popups — scanHover handles those
-        if (b.closest("[data-hovercard-url], .Popover, .Popover-message")) return;
+        if (b.closest("[data-hovercard-url], .Popover, .Popover-message"))
+          return;
         // scope the duplicate check to the button's own row/container so multiple users in the same broader item can each get badges
         const row =
           b.closest(".d-table") || b.closest("li") || b.closest("div");
@@ -700,7 +704,10 @@
                               );
                             return;
                           }
-                          const resp = await resolveFollowStatus(viewer, headerName);
+                          const resp = await resolveFollowStatus(
+                            viewer,
+                            headerName,
+                          );
                           if (!resp)
                             dom.replaceWithBadge(
                               placeholder,
@@ -746,7 +753,8 @@
               // Skip anchors that are not user profiles (e.g., /explore, /settings)
               if (IGNORED_PATHS.includes(name.toLowerCase())) return;
               // Skip anchors inside hovercards/popups — scanHover handles those
-              if (a.closest("[data-hovercard-url], .Popover, .Popover-message")) return;
+              if (a.closest("[data-hovercard-url], .Popover, .Popover-message"))
+                return;
               // In repo-showing cards (STARRED/TRENDING/RECOMMENDATION/ADDED_TO_LIST), skip anchors that are part of the repo area entirely
               if (
                 (isStarredEvent ||
@@ -760,7 +768,10 @@
                   try {
                     const repoHref = ra.getAttribute("href") || "";
                     const repoParts = repoHref.replace(/^\//, "").split("/");
-                    return repoParts[0] && repoParts[0].toLowerCase() === name.toLowerCase();
+                    return (
+                      repoParts[0] &&
+                      repoParts[0].toLowerCase() === name.toLowerCase()
+                    );
                   } catch (e) {
                     return false;
                   }
