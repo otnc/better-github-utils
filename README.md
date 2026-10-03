@@ -6,6 +6,7 @@ Better GitHub Utils shows whether a GitHub user follows you (profile pages / fol
 
 ## Features
 - Show follow status on profile and followers/following lists
+- Restore the activity feed on the GitHub home page (GitHub moved it to `/feed`; it is rendered below the Pull requests / Issues lists, with a working "More" button — no token required)
 - Optionally store a Personal Access Token in the popup for authenticated API checks
 - Rate-limit diagnostics (X-RateLimit headers) for troubleshooting
 - Inline repository automation panel (Auto complete) for Archive/Delete tasks

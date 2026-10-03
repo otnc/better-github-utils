@@ -106,6 +106,22 @@ article:has(.github-utils-checker .github-utils-follow-badge)
   color: #666;
 }
 
+/* Restored home feed section (rendered below the dashboard lists) */
+.gh-utils-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.gh-utils-feed-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.gh-utils-feed-view-all {
+  font-size: 12px;
+}
+
 .gh-autocomplete-panel {
   margin: 12px 0 8px 0;
   border-radius: 8px;
