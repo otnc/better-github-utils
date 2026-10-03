@@ -16,9 +16,9 @@ export default defineConfig({
       // tree-shaken down to side effects.
       preserveEntrySignatures: "strict",
       input: {
-        "src/background": "src/background.js",
+        "src/background": "src/background.ts",
         "src/content": "src/content.js",
-        "popup/script": "popup/script.js",
+        "popup/script": "src/popup.ts",
         "src/utils/follow/api": "src/utils/follow/api.ts",
         "src/utils/follow/client": "src/utils/follow/client.ts",
         "src/utils/follow/dom": "src/utils/follow/dom.ts",

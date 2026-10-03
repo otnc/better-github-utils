@@ -1,31 +1,34 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const tokenInput = document.getElementById("token");
-  const saveBtn = document.getElementById("save");
-  const clearBtn = document.getElementById("clear");
-  const checkBtn = document.getElementById("check");
-  const status = document.getElementById("status");
-  const rateStatus = document.getElementById("rate-status");
+  const tokenInput = document.getElementById("token") as HTMLInputElement;
+  const saveBtn = document.getElementById("save") as HTMLButtonElement;
+  const clearBtn = document.getElementById("clear") as HTMLButtonElement;
+  const checkBtn = document.getElementById("check") as HTMLButtonElement;
+  const status = document.getElementById("status") as HTMLDivElement;
+  const rateStatus = document.getElementById("rate-status") as HTMLDivElement;
 
-  function setStatus(msg) {
+  function setStatus(msg: string) {
     status.textContent = msg;
   }
-  function setRate(html) {
+  function setRate(html: string) {
     rateStatus.innerHTML = html;
   }
 
-  function readableReset(ts) {
+  function readableReset(ts: number): string {
     try {
       const d = new Date(ts * 1000);
       return d.toLocaleString();
-    } catch (e) {
+    } catch {
       return String(ts);
     }
   }
 
-  chrome.storage.sync.get(["github_utils_token"], (items) => {
-    tokenInput.value = items.github_utils_token || "";
-    checkRate();
-  });
+  chrome.storage.sync.get<{ github_utils_token?: string | null }>(
+    ["github_utils_token"],
+    (items) => {
+      tokenInput.value = items.github_utils_token || "";
+      checkRate();
+    },
+  );
 
   saveBtn.addEventListener("click", () => {
     const token = tokenInput.value.trim();
@@ -34,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => {
         try {
           window.close();
-        } catch (e) {}
+        } catch {}
       }, 800);
       checkRate();
     });
@@ -47,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => {
         try {
           window.close();
-        } catch (e) {}
+        } catch {}
       }, 800);
       checkRate();
     });
@@ -55,10 +58,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   checkBtn.addEventListener("click", () => checkRate());
 
-  async function checkRate() {
+  async function checkRate(): Promise<void> {
     setRate("Checking rate limit...");
     const token = tokenInput.value.trim();
-    const headers = { Accept: "application/vnd.github.v3+json" };
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+    };
     if (token) headers["Authorization"] = `token ${token}`;
     try {
       const res = await fetch("https://api.github.com/rate_limit", {
@@ -87,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setRate(
           `<span class="ok">${rem}/${lim} remaining</span> (resets ${readableReset(reset)})`,
         );
-    } catch (e) {
+    } catch {
       setRate('<span class="warn">Network error</span>');
     }
   }
