@@ -1,18 +1,41 @@
 {
-  "name": "github-utils",
-  "version": "1.0.0",
-  "description": "Small extension to show whether a GitHub user follows you.",
-  "main": "index.js",
+  "name": "better-github-utils",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "format": "prettier --write ./src ./popup"
+    "dev": "vite build --watch",
+    "build": "node scripts/sync-version.js && vite build && node scripts/package.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "keywords": [],
-  "author": "",
+  "author": "otnc",
   "license": "ISC",
+  "description": "GitHub follow-status badges, home feed restore, and repository automation helpers.",
   "devDependencies": {
-    "axios": "^1.18.1",
-    "dotenv": "^17.2.3",
-    "prettier": "^3.8.1"
+    "@eslint/js": "^10.0.1",
+    "@types/archiver": "^8.0.0",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^26.6.4",
+    "archiver": "^8.0.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.13.0",
+    "happy-dom": "^18.0.1",
+    "prettier": "^3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^8.3.2",
+    "vitest": "^3.2.7"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
