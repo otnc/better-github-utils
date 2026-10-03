@@ -1,7 +1,15 @@
-async function getToken() {
-  return new Promise((resolve) =>
-    chrome.storage.sync.get(["github_utils_token"], (r) =>
-      resolve(r.github_utils_token || null),
+import type {
+  BackgroundMessage,
+  CacheEntry,
+  FollowStatus,
+  UserLists,
+} from "./types";
+
+async function getToken(): Promise<string | null> {
+  return new Promise<string | null>((resolve) =>
+    chrome.storage.sync.get<{ github_utils_token?: string | null }>(
+      ["github_utils_token"],
+      (r) => resolve(r.github_utils_token || null),
     ),
   );
 }
@@ -10,20 +18,20 @@ async function getToken() {
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 const PERSIST_KEY_LISTS = "gh_bg_lists_cache_v1";
 const PERSIST_KEY_CHECK = "gh_bg_check_cache_v1";
-const _listsCache = new Map();
-const _checkCache = new Map();
-let _persistTimer = null;
+const _listsCache = new Map<string, CacheEntry<UserLists>>();
+const _checkCache = new Map<string, CacheEntry<FollowStatus>>();
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function schedulePersistSave() {
   if (_persistTimer) return;
   _persistTimer = setTimeout(() => {
     _persistTimer = null;
     try {
-      const lists = {};
+      const lists: Record<string, CacheEntry<UserLists>> = {};
       _listsCache.forEach((v, k) => {
         if (v && v.ts && v.data) lists[k] = v;
       });
-      const checks = {};
+      const checks: Record<string, CacheEntry<FollowStatus>> = {};
       _checkCache.forEach((v, k) => {
         if (v && v.ts && v.data) checks[k] = v;
       });
@@ -37,15 +45,21 @@ function schedulePersistSave() {
   }, 500);
 }
 
-function loadPersistentCache() {
-  return new Promise((resolve) => {
+function loadPersistentCache(): Promise<void> {
+  return new Promise<void>((resolve) => {
     try {
       chrome.storage.local.get(
         [PERSIST_KEY_LISTS, PERSIST_KEY_CHECK],
         (items) => {
           const now = Date.now();
-          const lists = items?.[PERSIST_KEY_LISTS] || {};
-          const checks = items?.[PERSIST_KEY_CHECK] || {};
+          const lists = (items?.[PERSIST_KEY_LISTS] || {}) as Record<
+            string,
+            CacheEntry<UserLists>
+          >;
+          const checks = (items?.[PERSIST_KEY_CHECK] || {}) as Record<
+            string,
+            CacheEntry<FollowStatus>
+          >;
           Object.keys(lists).forEach((k) => {
             const e = lists[k];
             if (e && e.ts && now - e.ts < CACHE_TTL) _listsCache.set(k, e);
@@ -71,10 +85,10 @@ function loadPersistentCache() {
 // Load persisted cache on startup
 loadPersistentCache().catch(() => {});
 
-function parseLinkHeader(header) {
+function parseLinkHeader(header: string | null): Record<string, string> {
   if (!header) return {};
   const parts = header.split(",");
-  const map = {};
+  const map: Record<string, string> = {};
   for (const p of parts) {
     const m = p.match(/<([^>]+)>;\s*rel="([^"]+)"/);
     if (m) map[m[2]] = m[1];
@@ -82,11 +96,21 @@ function parseLinkHeader(header) {
   return map;
 }
 
-async function fetchPaged(url, token) {
-  const headers = { Accept: "application/vnd.github.v3+json" };
+// Minimal user shape needed from the GitHub followers/following APIs.
+interface GitHubUserItem {
+  login?: string;
+}
+
+async function fetchPaged(
+  url: string,
+  token: string | null,
+): Promise<GitHubUserItem[]> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github.v3+json",
+  };
   if (token) headers["Authorization"] = `token ${token}`;
-  const results = [];
-  let next = url;
+  const results: GitHubUserItem[] = [];
+  let next: string | null = url;
   try {
     while (next) {
       const res = await fetch(next, {
@@ -105,7 +129,7 @@ async function fetchPaged(url, token) {
           limit,
           reset,
         });
-      } catch (e) {}
+      } catch {}
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         console.warn("[gh-utils] bg fetchPaged non-ok", {
@@ -113,7 +137,9 @@ async function fetchPaged(url, token) {
           status: res.status,
           body: txt && txt.slice ? txt.slice(0, 300) : txt,
         });
-        const err = new Error(`fetchPaged failed: ${res.status}`);
+        const err: Error & { status?: number } = new Error(
+          `fetchPaged failed: ${res.status}`,
+        );
         err.status = res.status;
         throw err;
       }
@@ -128,14 +154,19 @@ async function fetchPaged(url, token) {
   return results;
 }
 
-function itemsToSet(items) {
-  const set = new Set();
+function itemsToSet(items: GitHubUserItem[]): Set<string> {
+  const set = new Set<string>();
   for (const i of items) if (i && i.login) set.add(i.login.toLowerCase());
   return set;
 }
 
-const _authCache = { login: null, fetchedAt: 0 };
-async function getAuthenticatedUser(token) {
+const _authCache: { login: string | null; fetchedAt: number } = {
+  login: null,
+  fetchedAt: 0,
+};
+async function getAuthenticatedUser(
+  token: string | null,
+): Promise<string | null> {
   if (!token) return null;
   const now = Date.now();
   if (_authCache.login && now - _authCache.fetchedAt < CACHE_TTL)
@@ -166,7 +197,7 @@ async function getAuthenticatedUser(token) {
   }
 }
 
-async function getAuthFollowers(token) {
+async function getAuthFollowers(token: string | null): Promise<Set<string>> {
   const items = await fetchPaged(
     "https://api.github.com/user/followers",
     token,
@@ -174,7 +205,7 @@ async function getAuthFollowers(token) {
   return itemsToSet(items);
 }
 
-async function getAuthFollowing(token) {
+async function getAuthFollowing(token: string | null): Promise<Set<string>> {
   const items = await fetchPaged(
     "https://api.github.com/user/following",
     token,
@@ -182,13 +213,20 @@ async function getAuthFollowing(token) {
   return itemsToSet(items);
 }
 
-async function getFollowersList(username, token) {
+async function getFollowersList(
+  username: string,
+  token: string | null,
+): Promise<Set<string>> {
   const url = `https://api.github.com/users/${encodeURIComponent(username)}/followers`;
   const items = await fetchPaged(url, token);
   return itemsToSet(items);
 }
 
-async function checkFollowing(viewer, target, token) {
+async function checkFollowing(
+  viewer: string,
+  target: string,
+  token: string | null,
+): Promise<FollowStatus> {
   const cacheKey = `${viewer.toLowerCase()}::${target.toLowerCase()}`;
   const now = Date.now();
 
@@ -206,7 +244,9 @@ async function checkFollowing(viewer, target, token) {
     _checkCache.delete(cacheKey);
   }
 
-  const headers = { Accept: "application/vnd.github.v3+json" };
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github.v3+json",
+  };
   if (token) headers["Authorization"] = `token ${token}`;
   let viewerFollowsTarget = false;
   let targetFollowsViewer = false;
@@ -255,7 +295,10 @@ async function checkFollowing(viewer, target, token) {
   return result;
 }
 
-async function getListsForUser(username, token) {
+async function getListsForUser(
+  username: string,
+  token: string | null,
+): Promise<UserLists> {
   const key = (username || "").toLowerCase();
   const now = Date.now();
 
@@ -273,7 +316,7 @@ async function getListsForUser(username, token) {
   }
 
   try {
-    let result;
+    let result: UserLists;
     if (token) {
       const authLogin = await getAuthenticatedUser(token);
       if (authLogin && authLogin.toLowerCase() === key) {
@@ -302,85 +345,89 @@ async function getListsForUser(username, token) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || (msg.type !== "checkFollow" && msg.type !== "getLists")) return;
+chrome.runtime.onMessage.addListener(
+  (msg: BackgroundMessage, sender, sendResponse) => {
+    if (!msg || (msg.type !== "checkFollow" && msg.type !== "getLists")) return;
 
-  (async () => {
-    try {
-      const token = await getToken();
-      if (!token) {
-        try {
-          console.warn(
-            "[gh-utils] background: token missing — refusing to operate",
-          );
-        } catch (e) {}
-        sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
-        return;
-      }
-
-      if (msg.type === "checkFollow") {
-        const { viewer, target } = msg;
-        if (!viewer || !target) {
-          sendResponse(null);
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) {
+          try {
+            console.warn(
+              "[gh-utils] background: token missing — refusing to operate",
+            );
+          } catch {}
+          sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
           return;
         }
-        try {
-          console.debug("[gh-utils] background: checkFollow (direct)", {
-            viewer,
-            target,
-          });
-          const res = await checkFollowing(viewer, target, token);
-          if (!res) {
-            console.warn(
-              "[gh-utils] background: checkFollowing returned null",
-              { viewer, target },
-            );
-          } else {
-            console.debug("[gh-utils] background: checkFollowing", {
+
+        if (msg.type === "checkFollow") {
+          const { viewer, target } = msg;
+          if (!viewer || !target) {
+            sendResponse(null);
+            return;
+          }
+          try {
+            console.debug("[gh-utils] background: checkFollow (direct)", {
               viewer,
               target,
-              res,
             });
+            const res = await checkFollowing(viewer, target, token);
+            if (!res) {
+              console.warn(
+                "[gh-utils] background: checkFollowing returned null",
+                { viewer, target },
+              );
+            } else {
+              console.debug("[gh-utils] background: checkFollowing", {
+                viewer,
+                target,
+                res,
+              });
+            }
+            sendResponse(res);
+          } catch (e) {
+            console.warn("[gh-utils] background: checkFollowing error", e, {
+              viewer,
+              target,
+            });
+            sendResponse(null);
           }
-          sendResponse(res);
-        } catch (e) {
-          console.warn("[gh-utils] background: checkFollowing error", e, {
-            viewer,
-            target,
-          });
-          sendResponse(null);
-        }
-        return;
-      }
-
-      if (msg.type === "getLists") {
-        const { viewer } = msg;
-        if (!viewer) {
-          sendResponse({ followers: [] });
           return;
         }
-        try {
-          const lists = await getListsForUser(viewer, token);
-          console.debug("[gh-utils] background: getLists", {
-            viewer,
-            counts: {
-              followers: lists.followers.length,
-            },
-          });
-          sendResponse(lists);
-        } catch (e) {
-          console.warn("[gh-utils] background: getLists failed", e, { viewer });
-          sendResponse({ followers: [] });
-        }
-        return;
-      }
-    } catch (e) {
-      console.warn("[gh-utils] background: onMessage handler error", e);
-      try {
-        sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
-      } catch (e2) {}
-    }
-  })();
 
-  return true;
-});
+        if (msg.type === "getLists") {
+          const { viewer } = msg;
+          if (!viewer) {
+            sendResponse({ followers: [] });
+            return;
+          }
+          try {
+            const lists = await getListsForUser(viewer, token);
+            console.debug("[gh-utils] background: getLists", {
+              viewer,
+              counts: {
+                followers: lists.followers.length,
+              },
+            });
+            sendResponse(lists);
+          } catch (e) {
+            console.warn("[gh-utils] background: getLists failed", e, {
+              viewer,
+            });
+            sendResponse({ followers: [] });
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn("[gh-utils] background: onMessage handler error", e);
+        try {
+          sendResponse(msg.type === "checkFollow" ? null : { followers: [] });
+        } catch {}
+      }
+    })();
+
+    return true;
+  },
+);
