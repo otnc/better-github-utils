@@ -1,18 +1,25 @@
-async function getToken() {
+import type { FollowerLists, FollowStatus, UserLists } from "../../types";
+
+interface GitHubUser {
+  login: string;
+}
+
+async function getToken(): Promise<string | null> {
   return new Promise((resolve) =>
-    chrome.storage.sync.get(["github_utils_token"], (r) =>
-      resolve(r.github_utils_token || null),
+    chrome.storage.sync.get<{ github_utils_token?: string | null }>(
+      ["github_utils_token"],
+      (r) => resolve(r.github_utils_token || null),
     ),
   );
 }
 
-const _listCache = new Map();
+const _listCache = new Map<string, FollowerLists>();
 const CACHE_TTL = 10 * 60 * 1000;
 
-function parseLinkHeader(header) {
+function parseLinkHeader(header: string): Record<string, string> {
   if (!header) return {};
   const parts = header.split(",");
-  const map = {};
+  const map: Record<string, string> = {};
   for (const p of parts) {
     const m = p.match(/<([^>]+)>;\s*rel="([^"]+)"/);
     if (m) map[m[2]] = m[1];
@@ -20,11 +27,16 @@ function parseLinkHeader(header) {
   return map;
 }
 
-async function fetchPaged(url, token) {
-  const headers = { Accept: "application/vnd.github.v3+json" };
+async function fetchPaged(
+  url: string,
+  token: string | null,
+): Promise<GitHubUser[]> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github.v3+json",
+  };
   if (token) headers["Authorization"] = `token ${token}`;
-  const results = [];
-  let next = url;
+  const results: GitHubUser[] = [];
+  let next: string | null = url;
   try {
     while (next) {
       const res = await fetch(next, {
@@ -44,7 +56,7 @@ async function fetchPaged(url, token) {
           limit,
           reset,
         });
-      } catch (e) {}
+      } catch {}
 
       if (!res.ok) {
         try {
@@ -54,14 +66,16 @@ async function fetchPaged(url, token) {
             status: res.status,
             body: txt && txt.slice ? txt.slice(0, 300) : txt,
           });
-        } catch (e) {
+        } catch {
           console.warn("[gh-utils] fetchPaged non-ok and failed to read body", {
             url: next,
             status: res.status,
           });
         }
 
-        const err = new Error(`fetchPaged failed: ${res.status}`);
+        const err = new Error(`fetchPaged failed: ${res.status}`) as Error & {
+          status: number;
+        };
         err.status = res.status;
         throw err;
       }
@@ -80,13 +94,16 @@ async function fetchPaged(url, token) {
   return results;
 }
 
-function itemsToSet(items) {
-  const set = new Set();
+function itemsToSet(items: GitHubUser[]): Set<string> {
+  const set = new Set<string>();
   for (const i of items) if (i && i.login) set.add(i.login.toLowerCase());
   return set;
 }
 
-async function getFollowersList(username, token) {
+async function getFollowersList(
+  username: string,
+  token: string | null,
+): Promise<Set<string>> {
   const url = `https://api.github.com/users/${encodeURIComponent(username)}/followers`;
   const items = await fetchPaged(url, token);
   const set = itemsToSet(items);
@@ -94,8 +111,13 @@ async function getFollowersList(username, token) {
   return set;
 }
 
-const _authCache = { login: null, fetchedAt: 0 };
-async function getAuthenticatedUser(token) {
+const _authCache: { login: string | null; fetchedAt: number } = {
+  login: null,
+  fetchedAt: 0,
+};
+async function getAuthenticatedUser(
+  token: string | null,
+): Promise<string | null> {
   if (!token) return null;
   const now = Date.now();
   if (_authCache.login && now - _authCache.fetchedAt < CACHE_TTL)
@@ -127,7 +149,7 @@ async function getAuthenticatedUser(token) {
   }
 }
 
-async function getAuthFollowers(token) {
+async function getAuthFollowers(token: string | null): Promise<Set<string>> {
   const url = `https://api.github.com/user/followers`;
   const items = await fetchPaged(url, token);
   const set = itemsToSet(items);
@@ -135,7 +157,7 @@ async function getAuthFollowers(token) {
   return set;
 }
 
-async function getAuthFollowing(token) {
+async function getAuthFollowing(token: string | null): Promise<Set<string>> {
   const url = `https://api.github.com/user/following`;
   const items = await fetchPaged(url, token);
   const set = itemsToSet(items);
@@ -143,7 +165,7 @@ async function getAuthFollowing(token) {
   return set;
 }
 
-async function ensureListsForUser(username) {
+async function ensureListsForUser(username: string): Promise<FollowerLists> {
   const key = username.toLowerCase();
   const now = Date.now();
   const token = await getToken();
@@ -155,10 +177,12 @@ async function ensureListsForUser(username) {
         fetchedAt: new Date(cached.fetchedAt).toISOString(),
         error: !!cached.error,
         followers: cached.followers
-          ? cached.followers.size || cached.followers.length || 0
+          ? cached.followers.size ||
+            (cached.followers as Set<string> & { length?: number }).length ||
+            0
           : 0,
       });
-    } catch (e) {}
+    } catch {}
     return cached;
   }
 
@@ -183,12 +207,20 @@ async function ensureListsForUser(username) {
             getAuthFollowers(token),
             getAuthFollowing(token),
           ]);
-          const obj = { followers, following, fetchedAt: Date.now() };
+          const obj: FollowerLists = {
+            followers,
+            following,
+            fetchedAt: Date.now(),
+          };
           _listCache.set(key, obj);
           console.debug("[gh-utils] ensureListsForUser: set cache (auth)", {
             username: key,
-            followers: followers.size || followers.length,
-            following: following.size || following.length,
+            followers:
+              followers.size ||
+              (followers as Set<string> & { length?: number }).length,
+            following:
+              following.size ||
+              (following as Set<string> & { length?: number }).length,
           });
           return obj;
         } catch (e) {
@@ -212,17 +244,19 @@ async function ensureListsForUser(username) {
   try {
     console.debug("[gh-utils] ensureListsForUser: fetching followers for", key);
     const followers = await getFollowersList(username, token);
-    const obj = { followers, fetchedAt: Date.now() };
+    const obj: FollowerLists = { followers, fetchedAt: Date.now() };
     _listCache.set(key, obj);
     console.debug("[gh-utils] ensureListsForUser: set cache (unauth)", {
       username: key,
-      followers: followers.size || followers.length,
+      followers:
+        followers.size ||
+        (followers as Set<string> & { length?: number }).length,
     });
     return obj;
   } catch (e) {
     console.warn("[gh-utils] ensureListsForUser failed for", username, e);
 
-    const obj = {
+    const obj: FollowerLists = {
       followers: new Set(),
       fetchedAt: Date.now(),
       error: true,
@@ -232,7 +266,10 @@ async function ensureListsForUser(username) {
   }
 }
 
-export async function getFollowStatus(viewer, target) {
+export async function getFollowStatus(
+  viewer: string,
+  target: string,
+): Promise<FollowStatus | null> {
   if (!viewer || !target) return null;
 
   try {
@@ -242,15 +279,20 @@ export async function getFollowStatus(viewer, target) {
     const viewerFollowsTarget = null;
     const targetFollowsViewer = lists.followers.has(vt);
     return { viewerFollowsTarget, targetFollowsViewer };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-export async function checkFollowing(viewer, target) {
+export async function checkFollowing(
+  viewer: string,
+  target: string,
+): Promise<FollowStatus | null> {
   if (!viewer || !target) return null;
   const token = await getToken();
-  const headers = { Accept: "application/vnd.github.v3+json" };
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github.v3+json",
+  };
   if (token) headers["Authorization"] = `token ${token}`;
   let viewerFollowsTarget = false;
   let targetFollowsViewer = false;
@@ -295,7 +337,7 @@ export async function checkFollowing(viewer, target) {
   return { viewerFollowsTarget, targetFollowsViewer };
 }
 
-export async function getListsForUser(username) {
+export async function getListsForUser(username: string): Promise<UserLists> {
   if (!username) return { followers: [], fetchedAt: Date.now() };
   try {
     const lists = await ensureListsForUser(username);

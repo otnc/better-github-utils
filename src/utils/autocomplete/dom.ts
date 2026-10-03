@@ -1,14 +1,29 @@
-export function getRepoFullName() {
-  const m = location.pathname.match(/^\/([^\/]+)\/([^\/]+)(?:\/.*)?$/);
+export interface DangerItems {
+  visibility: HTMLLIElement | null;
+  archive: HTMLLIElement | null;
+  delete: HTMLLIElement | null;
+}
+
+export interface VisibilityRadioState {
+  checked: boolean;
+}
+
+export interface VisibilityRadios {
+  makePrivate: HTMLInputElement | VisibilityRadioState;
+  makePublic: HTMLInputElement | VisibilityRadioState;
+}
+
+export function getRepoFullName(): string | null {
+  const m = location.pathname.match(/^\/([^/]+)\/([^/]+)(?:\/.*)?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
-export function findDangerZone() {
-  const heading = document.querySelector(
+export function findDangerZone(): HTMLElement | null {
+  const heading = document.querySelector<HTMLElement>(
     "#danger-zone, h2#danger-zone, h3#danger-zone",
   );
   if (heading) {
-    const next = heading.nextElementSibling;
+    const next = heading.nextElementSibling as HTMLElement | null;
     if (
       next &&
       next.classList &&
@@ -19,29 +34,31 @@ export function findDangerZone() {
     return heading;
   }
 
-  let el = document.querySelector(
+  let el = document.querySelector<HTMLElement>(
     ".Box.color-border-danger, .Box--danger, .Box[color-border-danger], .Box--danger",
   );
   if (el) return el;
 
-  el = document.querySelector(
+  el = document.querySelector<HTMLElement>(
     'form[action*="/settings/delete"], form[action*="/settings/archive"]',
   );
-  if (el) return el.closest(".Box") || el.parentElement || el;
+  if (el) return el.closest<HTMLElement>(".Box") || el.parentElement || el;
 
-  const headings = Array.from(document.querySelectorAll("h1,h2,h3,summary"));
+  const headings = Array.from(
+    document.querySelectorAll<HTMLElement>("h1,h2,h3,summary"),
+  );
   for (const h of headings)
     if (/danger/i.test(h.textContent || ""))
-      return h.closest(".Box") || h.parentElement || h;
+      return h.closest<HTMLElement>(".Box") || h.parentElement || h;
 
   return (
-    document.querySelector(
+    document.querySelector<HTMLElement>(
       ".repository-content, #repo-content-pjax-container",
     ) || null
   );
 }
 
-export function createPanel() {
+export function createPanel(): HTMLDivElement {
   const panel = document.createElement("div");
   panel.className = "gh-autocomplete-panel";
   panel.innerHTML = `
@@ -55,18 +72,18 @@ export function createPanel() {
   return panel;
 }
 
-export function findDangerItems() {
-  const items = { visibility: null, archive: null, delete: null };
+export function findDangerItems(): DangerItems {
+  const items: DangerItems = { visibility: null, archive: null, delete: null };
 
   const lis = Array.from(
-    document.querySelectorAll(
+    document.querySelectorAll<HTMLLIElement>(
       ".Box.color-border-danger ul > li, .Box.color-border-danger li",
     ),
   ).filter((li) => {
     if (li.closest("template")) return false;
     try {
       if (li.offsetParent === null) return false;
-    } catch (e) {}
+    } catch {}
     return true;
   });
   for (const li of lis) {
@@ -82,7 +99,7 @@ export function findDangerItems() {
   return items;
 }
 
-export function createInlinePanel(action) {
+export function createInlinePanel(action: string): HTMLDivElement {
   const wrap = document.createElement("div");
   wrap.className = "gh-autoc-inline gh-autocomplete-inline-panel";
 
@@ -97,9 +114,9 @@ export function createInlinePanel(action) {
   return wrap;
 }
 
-export function insertInlinePanels() {
+export function insertInlinePanels(): HTMLDivElement[] {
   const items = findDangerItems();
-  const inserted = [];
+  const inserted: HTMLDivElement[] = [];
   for (const [action, li] of Object.entries(items)) {
     if (!li) continue;
     if (action === "visibility") continue;
@@ -108,22 +125,25 @@ export function insertInlinePanels() {
       li.querySelector(".flex-auto, .flex-1") || li.querySelector("div") || li;
     const panel = createInlinePanel(action);
     try {
-      anchor.parentElement.insertBefore(
+      anchor.parentElement!.insertBefore(
         panel,
         anchor.nextElementSibling || anchor.nextSibling,
       );
       inserted.push(panel);
-    } catch (e) {
+    } catch {
       try {
         li.appendChild(panel);
         inserted.push(panel);
-      } catch (e2) {}
+      } catch {}
     }
   }
   return inserted;
 }
 
-export function insertPanel(target, panel) {
+export function insertPanel(
+  target: HTMLElement | null,
+  panel: HTMLElement | null,
+): boolean {
   if (!target || !panel) return false;
   try {
     if (
@@ -132,7 +152,7 @@ export function insertPanel(target, panel) {
       (target.classList && target.classList.contains("Subhead-heading"))
     ) {
       console.debug("[gh-utils] inserting panel after heading target");
-      target.parentElement.insertBefore(
+      target.parentElement!.insertBefore(
         panel,
         target.nextElementSibling || target.nextSibling,
       );
@@ -150,7 +170,7 @@ export function insertPanel(target, panel) {
       return true;
     }
 
-    const hd = document.querySelector("#danger-zone");
+    const hd = document.querySelector<HTMLElement>("#danger-zone");
     if (hd && hd.parentElement) {
       console.debug("[gh-utils] fallback: inserting after #danger-zone");
       hd.parentElement.insertBefore(
@@ -168,50 +188,55 @@ export function insertPanel(target, panel) {
     try {
       target.prepend(panel);
       return true;
-    } catch (e2) {
+    } catch {
       return false;
     }
   }
 }
 
-export function highlight(el) {
+export function highlight(el: HTMLElement | null): void {
   if (!el) return;
   el.style.boxShadow = "0 0 0 3px rgba(255,165,0,0.15)";
   el.style.transition = "box-shadow 0.2s ease-in-out";
 }
 
-export function findDeleteInput() {
+export function findDeleteInput(): HTMLInputElement | null {
   return (
-    document.querySelector(
+    document.querySelector<HTMLInputElement>(
       'input[aria-label="Type the name of the repository to confirm"], input[name="verify"], input[placeholder*="owner/repo"]',
     ) ||
     (document
-      .querySelector('input[type="text"]')
+      .querySelector<HTMLInputElement>('input[type="text"]')
       ?.closest("form")
-      ?.querySelector('input[type="text"]') ??
+      ?.querySelector<HTMLInputElement>('input[type="text"]') ??
       null)
   );
 }
 
-export function findDeleteConfirmButton() {
+export function findDeleteConfirmButton():
+  HTMLButtonElement | HTMLInputElement | null {
   return (
-    Array.from(document.querySelectorAll('button, input[type="submit"]')).find(
-      (b) => /delete this repository/i.test(b.textContent || b.value || ""),
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
+        'button, input[type="submit"]',
+      ),
+    ).find((b) =>
+      /delete this repository/i.test(b.textContent || b.value || ""),
     ) || null
   );
 }
 
-export function findArchiveButton() {
+export function findArchiveButton(): HTMLButtonElement | null {
   return (
-    Array.from(document.querySelectorAll("button")).find((b) =>
-      /archive this repository/i.test(b.textContent || ""),
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => /archive this repository/i.test(b.textContent || ""),
     ) || null
   );
 }
 
-export function findArchiveConfirmButton() {
+export function findArchiveConfirmButton(): HTMLButtonElement | null {
   return (
-    Array.from(document.querySelectorAll("button")).find(
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) =>
         /archive repository/i.test(b.textContent || "") ||
         /I understand the consequences.*archive/i.test(b.textContent || ""),
@@ -219,13 +244,15 @@ export function findArchiveConfirmButton() {
   );
 }
 
-export function findVisibilityForm() {
-  let form = document.querySelector(
+export function findVisibilityForm(): HTMLElement | null {
+  const form = document.querySelector<HTMLFormElement>(
     'form[action*="/settings/access"], form[action*="/settings/collaboration"], form:has(input[type="radio"])',
   );
   if (form) return form;
 
-  const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+  const radios = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+  );
   for (const r of radios) {
     try {
       const label =
@@ -239,24 +266,24 @@ export function findVisibilityForm() {
         "";
       if (/private|public/i.test(label))
         return (
-          r.closest("form") ||
-          r.closest('[role="dialog"]') ||
-          r.closest(".Overlay") ||
-          r.closest(".Box") ||
+          r.closest<HTMLElement>("form") ||
+          r.closest<HTMLElement>('[role="dialog"]') ||
+          r.closest<HTMLElement>(".Overlay") ||
+          r.closest<HTMLElement>(".Box") ||
           r.parentElement
         );
-    } catch (e) {}
+    } catch {}
   }
 
-  const visBtns = document.querySelectorAll(
+  const visBtns = document.querySelectorAll<HTMLElement>(
     '[data-new-visibility], button[id^="repo-visibility-proceed-button"]',
   );
   if (visBtns && visBtns.length) {
     const b = visBtns[0];
     return (
-      b.closest("form") ||
-      b.closest('[role="dialog"]') ||
-      b.closest(".Overlay") ||
+      b.closest<HTMLElement>("form") ||
+      b.closest<HTMLElement>('[role="dialog"]') ||
+      b.closest<HTMLElement>(".Overlay") ||
       b.parentElement ||
       null
     );
@@ -265,14 +292,19 @@ export function findVisibilityForm() {
   return null;
 }
 
-export function findVisibilityRadios(form) {
+export function findVisibilityRadios(
+  form: HTMLFormElement | null,
+): VisibilityRadios | null {
   if (!form) return null;
-  const radios = Array.from(form.querySelectorAll('input[type="radio"]')) || [];
-  let makePrivate = null;
-  let makePublic = null;
+  const radios =
+    Array.from(
+      form.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ) || [];
+  let makePrivate: HTMLInputElement | null = null;
+  let makePublic: HTMLInputElement | null = null;
 
   for (const r of radios) {
-    let label = "";
+    let label: string;
     try {
       if (r.labels && r.labels.length)
         label = Array.from(r.labels)
@@ -284,7 +316,7 @@ export function findVisibilityRadios(form) {
           r.nextSibling?.textContent ||
           r.getAttribute("aria-label") ||
           "";
-    } catch (e) {
+    } catch {
       label = r.getAttribute("aria-label") || "";
     }
     if (/private/i.test(label) && !makePrivate) makePrivate = r;
@@ -300,7 +332,7 @@ export function findVisibilityRadios(form) {
     };
   }
 
-  const hidden = form.querySelector(
+  const hidden = form.querySelector<HTMLInputElement>(
     'input[name="visibility"][type="hidden"], input[type="hidden"][name="visibility"]',
   );
   if (hidden) {
@@ -311,10 +343,10 @@ export function findVisibilityRadios(form) {
     };
   }
 
-  const btnPrivate = form.querySelector(
+  const btnPrivate = form.querySelector<HTMLElement>(
     '[data-new-visibility="private"], button[data-new-visibility="private"]',
   );
-  const btnPublic = form.querySelector(
+  const btnPublic = form.querySelector<HTMLElement>(
     '[data-new-visibility="public"], button[data-new-visibility="public"]',
   );
   if (btnPrivate || btnPublic) {
@@ -350,7 +382,7 @@ export function findVisibilityRadios(form) {
   )
     return { makePrivate: { checked: false }, makePublic: { checked: true } };
 
-  const docHidden = document.querySelector(
+  const docHidden = document.querySelector<HTMLInputElement>(
     'input[name="visibility"][type="hidden"]',
   );
   if (docHidden) {
@@ -367,13 +399,13 @@ export function findVisibilityRadios(form) {
   };
 
   const allRadios = Array.from(
-    document.querySelectorAll('input[type="radio"]'),
+    document.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
   );
   for (const r of allRadios) {
     try {
       const lab =
         (r.labels &&
-          Array.from(r.labels)
+          Array.from(r.labels!)
             .map((l) => l.textContent)
             .join(" ")) ||
         r.closest("label")?.textContent ||
@@ -390,7 +422,7 @@ export function findVisibilityRadios(form) {
           makePrivate: { checked: false },
           makePublic: { checked: true },
         };
-    } catch (e) {}
+    } catch {}
   }
 
   console.debug("[gh-utils] findVisibilityRadios: no radios found");

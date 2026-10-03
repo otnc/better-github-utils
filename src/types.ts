@@ -25,3 +25,28 @@ export interface CacheEntry<T> {
   ts: number;
   data: T;
 }
+
+// In-memory follower list snapshot used by the follow API. Serialized
+// UserLists arrays are converted to Sets for membership lookups.
+export interface FollowerLists {
+  followers: Set<string>;
+  following?: Set<string>;
+  fetchedAt: number;
+  error?: boolean;
+}
+
+// Follower lists as returned to the content script by ensureViewerLists.
+// Fallback paths may omit the fetch timestamp.
+export interface ViewerLists {
+  followers: string[];
+  following?: string[];
+  fetchedAt?: number;
+  error?: boolean;
+}
+
+// Cache entry shape used by the follow client's in-memory and persisted
+// caches (value + timestamp).
+export interface FollowCacheEntry<T> {
+  value: T;
+  ts: number;
+}

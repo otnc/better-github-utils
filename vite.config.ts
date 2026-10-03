@@ -16,14 +16,14 @@ export default defineConfig({
       // tree-shaken down to side effects.
       preserveEntrySignatures: "strict",
       input: {
-        "src/background": "src/background.js",
+        "src/background": "src/background.ts",
         "src/content": "src/content.js",
-        "popup/script": "popup/script.js",
-        "src/utils/follow/api": "src/utils/follow/api.js",
-        "src/utils/follow/client": "src/utils/follow/client.js",
-        "src/utils/follow/dom": "src/utils/follow/dom.js",
-        "src/utils/autocomplete/actions": "src/utils/autocomplete/actions.js",
-        "src/utils/autocomplete/dom": "src/utils/autocomplete/dom.js",
+        "popup/script": "src/popup.ts",
+        "src/utils/follow/api": "src/utils/follow/api.ts",
+        "src/utils/follow/client": "src/utils/follow/client.ts",
+        "src/utils/follow/dom": "src/utils/follow/dom.ts",
+        "src/utils/autocomplete/actions": "src/utils/autocomplete/actions.ts",
+        "src/utils/autocomplete/dom": "src/utils/autocomplete/dom.ts",
         "src/utils/homefeed/feed": "src/utils/homefeed/feed.js",
       },
       output: {

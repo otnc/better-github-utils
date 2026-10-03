@@ -1,12 +1,42 @@
 import * as dom from "./dom.js";
 
-function wait(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+export interface ApiResult {
+  ok: boolean;
+  status: number;
+  json: unknown;
+  text: string;
 }
 
-export async function apiRequest(path, method = "GET", token, body = null) {
+export interface PrepareOptions {
+  autoEnable?: boolean;
+  autoClick?: boolean;
+  countdown?: number;
+  openDialog?: boolean;
+}
+
+export interface CancelSignal {
+  canceled?: boolean;
+}
+
+export interface PrepareResult {
+  ok: boolean;
+  reason?: string;
+  info?: string;
+  target?: HTMLElement;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+export async function apiRequest(
+  path: string,
+  method: string = "GET",
+  token?: string,
+  body: Record<string, unknown> | null = null,
+): Promise<ApiResult> {
   if (!token) throw new Error("no_token");
-  const headers = {
+  const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
     Authorization: `token ${token}`,
   };
@@ -18,37 +48,54 @@ export async function apiRequest(path, method = "GET", token, body = null) {
     cache: "no-store",
   });
   const txt = await res.text();
-  let json = null;
+  let json: unknown = null;
   try {
     json = txt ? JSON.parse(txt) : null;
-  } catch (e) {}
+  } catch {}
   return { ok: res.ok, status: res.status, json, text: txt };
 }
 
-export async function apiDeleteRepo(repoFullName, token) {
+export async function apiDeleteRepo(
+  repoFullName: string,
+  token?: string,
+): Promise<ApiResult> {
   return await apiRequest(`/repos/${repoFullName}`, "DELETE", token);
 }
 
-export async function apiArchiveRepo(repoFullName, token) {
+export async function apiArchiveRepo(
+  repoFullName: string,
+  token?: string,
+): Promise<ApiResult> {
   return await apiRequest(`/repos/${repoFullName}`, "PATCH", token, {
     archived: true,
   });
 }
 
-export async function apiSetArchived(repoFullName, archived, token) {
+export async function apiSetArchived(
+  repoFullName: string,
+  archived: boolean,
+  token?: string,
+): Promise<ApiResult> {
   return await apiRequest(`/repos/${repoFullName}`, "PATCH", token, {
     archived: !!archived,
   });
 }
 
-export async function apiGetRepo(repoFullName, token) {
+export async function apiGetRepo(
+  repoFullName: string,
+  token?: string,
+): Promise<ApiResult> {
   return await apiRequest(`/repos/${repoFullName}`, "GET", token);
 }
 
 export async function prepareDelete(
-  options = { autoEnable: false, autoClick: false, countdown: 3 },
-  signal = { canceled: false },
-) {
+  options: PrepareOptions = {
+    autoEnable: false,
+    autoClick: false,
+    countdown: 3,
+  },
+  signal: CancelSignal = { canceled: false },
+): Promise<PrepareResult> {
   const repo = dom.getRepoFullName();
   if (!repo) return { ok: false, reason: "not_repo" };
   const input = dom.findDeleteInput();
@@ -60,7 +107,7 @@ export async function prepareDelete(
     try {
       confirmBtn.removeAttribute("disabled");
       confirmBtn.disabled = false;
-    } catch (e) {}
+    } catch {}
   }
   dom.highlight(confirmBtn);
 
@@ -74,7 +121,7 @@ export async function prepareDelete(
     try {
       confirmBtn.click();
       return { ok: true, info: "clicked", target: confirmBtn };
-    } catch (e) {
+    } catch {
       return { ok: false, reason: "click_failed" };
     }
   }
@@ -83,9 +130,13 @@ export async function prepareDelete(
 }
 
 export async function prepareArchive(
-  options = { autoEnable: false, autoClick: false, countdown: 3 },
-  signal = { canceled: false },
-) {
+  options: PrepareOptions = {
+    autoEnable: false,
+    autoClick: false,
+    countdown: 3,
+  },
+  signal: CancelSignal = { canceled: false },
+): Promise<PrepareResult> {
   const btn = dom.findArchiveButton();
   if (!btn) return { ok: false, reason: "no_archive_button" };
   let confirm = dom.findArchiveConfirmButton();
@@ -93,7 +144,7 @@ export async function prepareArchive(
     if (options.openDialog) {
       try {
         btn.click();
-      } catch (e) {}
+      } catch {}
       await wait(300);
       confirm = dom.findArchiveConfirmButton();
     }
@@ -103,7 +154,7 @@ export async function prepareArchive(
     try {
       confirm.removeAttribute("disabled");
       confirm.disabled = false;
-    } catch (e) {}
+    } catch {}
   }
   dom.highlight(confirm);
 
@@ -117,7 +168,7 @@ export async function prepareArchive(
     try {
       confirm.click();
       return { ok: true, info: "clicked", target: confirm };
-    } catch (e) {
+    } catch {
       return { ok: false, reason: "click_failed" };
     }
   }
