@@ -6,6 +6,7 @@ Better GitHub Utils は、プロフィールページ、following リストで�
 
 ## 機能
 - プロフィール、followers/following リスト、ホバーカードでフォロー状況を表示
+- GitHub のホームページにアクティビティフィードを復元（GitHub はフィードを `/feed` へ移動しましたが、ホームの Pull requests / Issues リストの下に表示し、「More」ボタンも動作します。トークン不要）
 - ポップアップで PAT を設定して認証済み API を利用可能
 - レート制限の診断（`X-RateLimit` ヘッダ）でトラブルシュートを支援
 - リポジトリの自動化パネル（アーカイブ／削除の補助）を提供

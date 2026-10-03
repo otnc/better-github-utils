@@ -1,6 +1,8 @@
 (async function () {
   "use strict";
-  // If no token is set in storage, disable all content-script behavior.
+  // If no token is set in storage, follow-related behavior is disabled.
+  // (The home feed restore still works — it only needs the GitHub session.)
+  let hasToken = true;
   try {
     const token = await new Promise((resolve) =>
       chrome.storage.sync.get(["github_utils_token"], (items) =>
@@ -8,14 +10,16 @@
       ),
     );
     if (!token) {
+      hasToken = false;
       try {
         console.debug(
-          "[gh-utils] content: token missing — content script disabled",
+          "[gh-utils] content: token missing — follow features disabled",
         );
       } catch (e) {}
-      return;
     }
-  } catch (e) {}
+  } catch (e) {
+    hasToken = false;
+  }
 
   const _moduleCache = new Map();
   async function ensure(modPath) {
@@ -69,6 +73,7 @@
     "pricing",
     "pulls",
     "issues",
+    "feed",
     "codespaces",
     "copilot",
     // Account & auth
@@ -130,7 +135,8 @@
   /**
    * Determine whether follow logic should be active on the current page.
    * Allowed pages:
-   *   - github.com (Feed / Home)
+   *   - github.com (Home)
+   *   - github.com/feed (Feed)
    *   - github.com/[username] (profile)
    *   - github.com/[username]?tab=following
    *   - github.com/[username]?tab=followers
@@ -140,8 +146,9 @@
   function shouldRunFollowLogic() {
     try {
       const path = location.pathname;
-      // Home / Feed page
-      if (path === "/" || path === "") return true;
+      // Home / Feed pages
+      if (path === "/" || path === "" || path === "/feed" || path === "/feed/")
+        return true;
       // Match /username or /username/ (no further segments)
       const match = path.match(/^\/([^\/]+)\/?$/);
       if (match) {
@@ -1093,6 +1100,29 @@
     };
     retryTimer = setTimeout(tryRun, 80);
   }
+
+  // Restore the activity feed on the home page (below the Pull requests /
+  // Issues lists). This only needs the logged-in GitHub session, so it is
+  // booted before the token gate; follow badges inside the injected feed
+  // still require a token.
+  try {
+    ensure("src/utils/homefeed/feed.js").then((feedMod) => {
+      try {
+        if (feedMod && feedMod.startHomeFeed) {
+          feedMod.startHomeFeed({
+            onItems: (root) => {
+              if (!hasToken) return;
+              try {
+                scanFeed(root);
+              } catch (e) {}
+            },
+          });
+        }
+      } catch (e) {}
+    });
+  } catch (e) {}
+
+  if (!hasToken) return;
 
   // Ensure badges inside follow forms are moved to checker container when a follow/unfollow action occurs
   (function attachFollowProtectionHandlers() {
