@@ -1,10 +1,11 @@
 # Better GitHub Utils
 
-[English](./README.md) | **日本語**  
+[English](./README.md) | **日本語**
 
 Better GitHub Utils は、プロフィールページ、following リストで「そのユーザーがあなたをフォローしているか」を表示する拡張機能です。オプションで Personal Access Token（PAT）をポップアップから設定することで、認証済み API チェックやレート制限の診断、リポジトリ自動化（アーカイブ／削除支援）などの機能が利用できます。
 
 ## 機能
+
 - プロフィール、followers/following リスト、ホバーカードでフォロー状況を表示
 - GitHub のホームページにアクティビティフィードを復元（GitHub はフィードを `/feed` へ移動しましたが、ホームの Pull requests / Issues リストの下に表示し、「More」ボタンも動作します。トークン不要）
 - ポップアップで PAT を設定して認証済み API を利用可能
@@ -13,11 +14,13 @@ Better GitHub Utils は、プロフィールページ、following リストで�
 - Chrome MV3 の service worker ライフサイクルに対応した、キャッシュとフォールバックによる頑健な実装
 
 ## インストール（開発者向け）
+
 1. Chrome を開き、`chrome://extensions` にアクセスします。
 2. **デベロッパーモード** を有効にします。
 3. **パッケージ化されていない拡張機能を読み込む** をクリックし、ZIP を解凍したフォルダを選択します。
 
 ## 使い方
+
 - GitHub のプロフィールページや followers/following リスト、ホバーカードを開くとフォロー状況のバッジが表示されます。
 - 拡張機能のポップアップで PAT を設定すると、認証済み API によるチェックや高いレート制限が利用できます。
 

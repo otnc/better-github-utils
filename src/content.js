@@ -633,14 +633,12 @@
                   } else {
                     // ensure not already present immediately adjacent
                     const next = headerAnchor.nextElementSibling;
-                    if (
-                      !(
-                        next &&
-                        next.classList &&
-                        (next.classList.contains("github-utils-list-badge") ||
-                          next.classList.contains("github-utils-follow-badge"))
-                      )
-                    ) {
+                    if (!(
+                      next &&
+                      next.classList &&
+                      (next.classList.contains("github-utils-list-badge") ||
+                        next.classList.contains("github-utils-follow-badge"))
+                    )) {
                       const placeholder = document.createElement("span");
                       placeholder.className = "github-utils-list-badge";
                       placeholder.textContent = "...";
