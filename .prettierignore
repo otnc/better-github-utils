@@ -4,3 +4,13 @@ dist/
 .private/
 public/manifest.json
 package-lock.json
+node_modules/
+dist/
+.agents/skills/
+.claude/
+README.md
+README.ja.md
+CONTRIBUTING.md
+CONTRIBUTING.ja.md
+package-lock.json
+package.json
