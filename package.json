@@ -13,7 +13,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
+    "docs:build": "kiritan build",
+    "docs:check": "kiritan check",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run docs:check && npm run test"
   },
   "keywords": [],
   "author": "otnc",
@@ -29,6 +31,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.13.0",
     "happy-dom": "^18.0.1",
+    "kiritan": "^0.6.1",
     "prettier": "^3.9.9",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",
