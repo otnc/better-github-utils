@@ -53,7 +53,7 @@ async function fetchFeedDocument(url: string): Promise<Document> {
  * placeholders stay with the items (they belong to the "Show less activity"
  * UI inside the items).
  */
-function extractFeedNodes(doc: Document): FeedNodes {
+export function extractFeedNodes(doc: Document): FeedNodes {
   const frame = doc.querySelector("turbo-frame");
   const items: Element[] = [];
   let moreForm: HTMLFormElement | null = null;
