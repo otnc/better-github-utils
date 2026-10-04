@@ -295,11 +295,14 @@ declare global {
       if (!viewer) return;
 
       // process per feed item/article to avoid cross-binding badges
+      const feedItemSelector =
+        "article, .js-feed-item-component, .news, .TimelineItem, .js-timeline-item, .news-item";
       const items = Array.from(
-        root.querySelectorAll<ContentElement>(
-          "article, .js-feed-item-component, .news, .TimelineItem, .js-timeline-item, .news-item",
-        ),
+        root.querySelectorAll<ContentElement>(feedItemSelector),
       );
+      if (root instanceof HTMLElement && root.matches(feedItemSelector)) {
+        items.unshift(asContentElement(root));
+      }
 
       items.forEach((item) => {
         try {
