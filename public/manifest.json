@@ -27,16 +27,6 @@
       "48": "icons/48x48.png"
     }
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "src/utils/follow/*.js",
-        "src/utils/autocomplete/*.js",
-        "src/utils/homefeed/*.js"
-      ],
-      "matches": ["https://github.com/*"]
-    }
-  ],
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],

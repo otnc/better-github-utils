@@ -1,12 +1,51 @@
+import * as followDom from "./utils/follow/dom.js";
+import * as followClient from "./utils/follow/client.js";
+import * as autocompleteDom from "./utils/autocomplete/dom.js";
+import * as autocompleteActions from "./utils/autocomplete/actions.js";
+import { startHomeFeed } from "./utils/homefeed/feed.js";
+import type { FollowStatus } from "./types.js";
+
+type ContentElement = HTMLElement & {
+  value?: string;
+  title?: string;
+  hidden?: boolean;
+  offsetParent?: Element | null;
+  disabled?: boolean;
+  checked?: boolean;
+};
+
+type ContentContainer = Document | HTMLElement;
+
+function asContentElement(element: Element): ContentElement {
+  return element as ContentElement;
+}
+
+function asButtonElement(element: Element): HTMLButtonElement {
+  return element as HTMLButtonElement;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+declare global {
+  interface Window {
+    __gh_last_location?: string;
+  }
+}
+
 (async function () {
   "use strict";
   // If no token is set in storage, follow-related behavior is disabled.
   // (The home feed restore still works — it only needs the GitHub session.)
   let hasToken = true;
   try {
-    const token = await new Promise((resolve) =>
+    const token = await new Promise<string | null>((resolve) =>
       chrome.storage.sync.get(["github_utils_token"], (items) =>
-        resolve(items.github_utils_token || null),
+        resolve(
+          (items as Record<string, unknown>).github_utils_token as
+            string | null,
+        ),
       ),
     );
     if (!token) {
@@ -21,29 +60,9 @@
     hasToken = false;
   }
 
-  const _moduleCache = new Map();
-  async function ensure(modPath) {
-    if (_moduleCache.has(modPath)) return _moduleCache.get(modPath);
-    try {
-      const mod = await import(chrome.runtime.getURL(modPath));
-      _moduleCache.set(modPath, mod);
-      return mod;
-    } catch (e) {
-      try {
-        console.warn(
-          "[gh-utils] ensure import failed",
-          modPath,
-          e && e.message ? e.message : e,
-        );
-      } catch (e2) {}
-      _moduleCache.set(modPath, null);
-      return null;
-    }
-  }
-
   function getCurrentUser() {
-    const m = document.querySelector('meta[name="user-login"]');
-    return m ? m.content : null;
+    const m = document.querySelector<ContentElement>('meta[name="user-login"]');
+    return m ? (m as HTMLMetaElement).content : null;
   }
 
   try {
@@ -115,7 +134,7 @@
   ];
 
   function getProfileFromPath() {
-    const m = location.pathname.match(/^\/([^\/]+)(?:\/.*)?$/);
+    const m = location.pathname.match(/^\/([^/]+)(?:\/.*)?$/);
     if (!m) return null;
     const u = m[1];
     return IGNORED_PATHS.includes(u.toLowerCase()) ? null : u;
@@ -150,7 +169,7 @@
       if (path === "/" || path === "" || path === "/feed" || path === "/feed/")
         return true;
       // Match /username or /username/ (no further segments)
-      const match = path.match(/^\/([^\/]+)\/?$/);
+      const match = path.match(/^\/([^/]+)\/?$/);
       if (match) {
         const segment = match[1];
         // Exclude reserved paths (already defined in IGNORED_PATHS)
@@ -171,8 +190,11 @@
     return profile !== viewer;
   }
 
-  async function resolveFollowStatus(viewer, name) {
-    const client = await ensure("src/utils/follow/client.js");
+  async function resolveFollowStatus(
+    viewer: string,
+    name: string,
+  ): Promise<FollowStatus | null> {
+    const client = followClient;
     const useBulk = shouldUseBulkChecks();
     if (useBulk && client) {
       return client.getFollowStatusOnce(viewer, name).catch(() => null);
@@ -195,20 +217,12 @@
     });
   }
 
-  async function handleButton(btn) {
-    const dom = await ensure("src/utils/follow/dom.js");
-    if (!dom) {
-      setTimeout(schedule, 250);
-      return;
-    }
-    const client = await ensure("src/utils/follow/client.js");
-    if (!client) {
-      setTimeout(schedule, 250);
-      return;
-    }
+  async function handleButton(btn: ContentElement): Promise<void> {
+    const dom = followDom;
+
     const viewer = getCurrentUser();
     if (!viewer) return;
-    const name = dom.extractUsernameFromButton(btn);
+    const name = dom.extractUsernameFromButton(asButtonElement(btn));
     if (!name) return;
     // Skip if the extracted name is a non-user path (e.g., /explore, /settings)
     if (IGNORED_PATHS.includes(name.toLowerCase())) return;
@@ -236,9 +250,9 @@
     else dom.appendBadgeToChecker(btn, badge);
   }
 
-  function scan(root = document) {
+  function scan(root: ContentContainer = document): void {
     const buttons = Array.from(
-      root.querySelectorAll('input[type="submit"],button'),
+      root.querySelectorAll<ContentElement>('input[type="submit"],button'),
     ).filter((b) =>
       /(^|\s)(follow|unfollow)($|\s)/i.test(
         (
@@ -265,24 +279,24 @@
           b.closest(".d-table") || b.closest("li") || b.closest("div");
         if (
           row &&
-          row.querySelector(
+          row.querySelector<ContentElement>(
             ".github-utils-list-badge, .github-utils-follow-badge",
           )
         )
           return;
-        handleButton(b);
+        handleButton(asContentElement(b));
       } catch (e) {}
     });
   }
 
-  function scanFeed(root = document) {
+  function scanFeed(root: ContentContainer = document): void {
     try {
       const viewer = getCurrentUser();
       if (!viewer) return;
 
       // process per feed item/article to avoid cross-binding badges
       const items = Array.from(
-        root.querySelectorAll(
+        root.querySelectorAll<ContentElement>(
           "article, .js-feed-item-component, .news, .TimelineItem, .js-timeline-item, .news-item",
         ),
       );
@@ -309,7 +323,8 @@
 
           // collect all anchors and identify repo links (owner/repo)
           const allAnchors = Array.from(
-            (item.querySelectorAll && item.querySelectorAll('a[href^="/"]')) ||
+            (item.querySelectorAll &&
+              item.querySelectorAll<ContentElement>('a[href^="/"]')) ||
               [],
           );
           if (!allAnchors.length) return;
@@ -327,9 +342,9 @@
           // consolidate existing badges in this article: keep one badge per username and remove duplicates
           try {
             // helper: attempt to find the closest username anchor for a badge element
-            const findClosestAnchorName = (el) => {
+            const findClosestAnchorName = (el: HTMLElement) => {
               try {
-                const isValidAnchor = (a) => {
+                const isValidAnchor = (a: Element) => {
                   const href = (a.getAttribute("href") || "")
                     .replace(/^\//, "")
                     .replace(/\/$/, "");
@@ -353,7 +368,8 @@
                         .replace(/^\//, "")
                         .replace(/\/$/, "");
                     const inner =
-                      prev.querySelector && prev.querySelector('a[href^="/"]');
+                      prev.querySelector &&
+                      prev.querySelector<ContentElement>('a[href^="/"]');
                     if (inner && isValidAnchor(inner))
                       return (inner.getAttribute("href") || "")
                         .replace(/^\//, "")
@@ -362,13 +378,14 @@
                 }
 
                 // search up the ancestor chain for anchors in local containers
-                let anc = el;
+                let anc: HTMLElement | null = el;
                 for (let i = 0; anc && i < 8; i++) {
                   anc = anc.parentElement;
                   if (!anc) break;
                   try {
                     const a =
-                      anc.querySelector && anc.querySelector('a[href^="/"]');
+                      anc.querySelector &&
+                      anc.querySelector<ContentElement>('a[href^="/"]');
                     if (a && isValidAnchor(a))
                       return (a.getAttribute("href") || "")
                         .replace(/^\//, "")
@@ -378,7 +395,7 @@
 
                 // fallback: choose the nearest anchor in the article by bounding rect distance
                 const anchors = Array.from(
-                  item.querySelectorAll('a[href^="/"]'),
+                  item.querySelectorAll<ContentElement>('a[href^="/"]'),
                 ).filter((a) => {
                   try {
                     return isValidAnchor(a);
@@ -390,7 +407,7 @@
                 const elRect = el.getBoundingClientRect
                   ? el.getBoundingClientRect()
                   : { top: 0, left: 0 };
-                let best = null;
+                let best: Element | null = null;
                 let bestDist = Number.MAX_VALUE;
                 anchors.forEach((a) => {
                   try {
@@ -405,7 +422,7 @@
                   } catch (e) {}
                 });
                 if (best)
-                  return (best.getAttribute("href") || "")
+                  return ((best as Element).getAttribute("href") || "")
                     .replace(/^\//, "")
                     .replace(/\/$/, "");
               } catch (e) {}
@@ -413,7 +430,7 @@
             };
 
             // helper: if badge sits inside a form or user-following container, derive username from the form or button
-            const getNameFromFormOrButton = (el) => {
+            const getNameFromFormOrButton = (el: HTMLElement) => {
               try {
                 const f =
                   el.closest("form") ||
@@ -424,7 +441,9 @@
                 try {
                   const action =
                     (f.getAttribute &&
-                      (f.getAttribute("action") || f.action || "")) ||
+                      (f.getAttribute("action") ||
+                        (f instanceof HTMLFormElement ? f.action : "") ||
+                        "")) ||
                     "";
                   const q = action.split("?")[1] || "";
                   const p = new URLSearchParams(q);
@@ -434,7 +453,9 @@
                 try {
                   const btns = Array.from(
                     (f.querySelectorAll &&
-                      f.querySelectorAll('input[type="submit"],button')) ||
+                      f.querySelectorAll<ContentElement>(
+                        'input[type="submit"],button',
+                      )) ||
                       [],
                   );
                   for (const b of btns) {
@@ -447,14 +468,16 @@
                         b.innerText ||
                         ""
                       ).trim();
-                      let m = s.match(/Follow\s+(.*)|Unfollow\s+(.*)/i);
+                      const m = s.match(/Follow\s+(.*)|Unfollow\s+(.*)/i);
                       if (m) return (m[1] || m[2]).trim();
                     } catch (e) {}
                   }
                 } catch (e) {}
                 // fallback: anchor inside the form/container
                 try {
-                  const a = f.querySelector && f.querySelector('a[href^="/"]');
+                  const a =
+                    f.querySelector &&
+                    f.querySelector<ContentElement>('a[href^="/"]');
                   if (a)
                     return (a.getAttribute("href") || "")
                       .replace(/^\//, "")
@@ -465,7 +488,7 @@
             };
 
             const existingBadges = Array.from(
-              item.querySelectorAll(
+              item.querySelectorAll<ContentElement>(
                 ".github-utils-list-badge, .github-utils-follow-badge",
               ),
             );
@@ -473,7 +496,7 @@
 
             // Move any badges that live inside forms or follow button containers into the persistent checker container
             try {
-              ensure("src/utils/follow/dom.js")
+              Promise.resolve(followDom)
                 .then((dom) => {
                   try {
                     existingBadges.forEach((b) => {
@@ -493,9 +516,9 @@
                           try {
                             const s = (
                               bn.getAttribute("aria-label") ||
-                              bn.title ||
+                              (bn as ContentElement).title ||
                               bn.textContent ||
-                              bn.innerText ||
+                              (bn as ContentElement).innerText ||
                               ""
                             ).toLowerCase();
                             return /(^|\s)(follow|unfollow)($|\s)/i.test(s);
@@ -505,7 +528,10 @@
                         });
                         if (followBtn) {
                           try {
-                            dom.appendBadgeToChecker(followBtn, b);
+                            dom.appendBadgeToChecker(
+                              asContentElement(followBtn),
+                              b,
+                            );
                           } catch (e) {}
                         }
                       } catch (e) {}
@@ -527,7 +553,9 @@
                   } else if (b.parentElement) {
                     const anchors =
                       Array.from(
-                        b.parentElement.querySelectorAll('a[href^="/"]'),
+                        b.parentElement.querySelectorAll<ContentElement>(
+                          'a[href^="/"]',
+                        ),
                       ) || [];
                     if (anchors.length)
                       name = (anchors[0].getAttribute("href") || "")
@@ -556,7 +584,9 @@
                     prev && prev.matches && prev.matches('a[href^="/"]')
                       ? prev
                       : (b.parentElement &&
-                          b.parentElement.querySelector('a[href^="/"]')) ||
+                          b.parentElement.querySelector<ContentElement>(
+                            'a[href^="/"]',
+                          )) ||
                         null;
                   if (ownerAnchor) {
                     const isOwnerNearRepo = repoAnchors.some((ra) => {
@@ -603,7 +633,9 @@
           let headerAnchor = null;
           if (isFollowEvent || isAddedToListEvent) {
             try {
-              headerAnchor = item.querySelector('header a[href^="/"]');
+              headerAnchor = item.querySelector<ContentElement>(
+                'header a[href^="/"]',
+              );
             } catch (e) {}
             if (headerAnchor) {
               const headerName = (headerAnchor.getAttribute("href") || "")
@@ -621,7 +653,7 @@
                 // if a badge for this name already exists elsewhere in the article, mark handled and skip
                 try {
                   if (
-                    item.querySelector(
+                    item.querySelector<ContentElement>(
                       '.github-utils-list-badge[data-gh-name="' +
                         headerName +
                         '"] , .github-utils-follow-badge[data-gh-name="' +
@@ -650,7 +682,7 @@
                           headerAnchor.parentElement;
                         const actionBtn =
                           header &&
-                          header.querySelector(
+                          header.querySelector<ContentElement>(
                             ".feed-item-heading-menu-button, button[aria-haspopup], .user-following-container, .github-utils-checker",
                           );
                         if (actionBtn) {
@@ -699,16 +731,7 @@
                       // resolve status for header anchor (uses headerName)
                       (async () => {
                         try {
-                          const dom = await ensure("src/utils/follow/dom.js");
-                          if (!dom) {
-                            dom &&
-                              dom.replaceWithBadge(
-                                placeholder,
-                                "unknown",
-                                "github-utils-list-badge name-side",
-                              );
-                            return;
-                          }
+                          const dom = followDom;
                           const resp = await resolveFollowStatus(
                             viewer,
                             headerName,
@@ -797,7 +820,7 @@
               // skip if this userRow already has a badge
               if (
                 userRow.querySelector &&
-                userRow.querySelector(
+                userRow.querySelector<ContentElement>(
                   ".github-utils-list-badge, .github-utils-follow-badge",
                 )
               )
@@ -806,7 +829,9 @@
               // find follow button in the same row
               const followBtn = Array.from(
                 (userRow.querySelectorAll &&
-                  userRow.querySelectorAll('input[type="submit"],button')) ||
+                  userRow.querySelectorAll<ContentElement>(
+                    'input[type="submit"],button',
+                  )) ||
                   [],
               ).find((b) => {
                 try {
@@ -875,7 +900,7 @@
 
                   // attempt to move placeholder into the persistent checker container (separate from the form)
                   try {
-                    ensure("src/utils/follow/dom.js")
+                    Promise.resolve(followDom)
                       .then((dom) => {
                         try {
                           const moved = dom.insertPlaceholderInChecker(
@@ -903,7 +928,7 @@
                   // Prefer placing the badge to the left of the action button/menu in the user's row when possible
                   let placed = false;
                   try {
-                    const actionBtn = userRow.querySelector(
+                    const actionBtn = userRow.querySelector<ContentElement>(
                       ".user-following-container, .feed-item-heading-menu-button, button[aria-haspopup], .github-utils-checker",
                     );
                     if (actionBtn) {
@@ -940,11 +965,9 @@
                 }
               } catch (e) {
                 try {
-                  ((followBtn && followBtn.parentElement) || a.parentElement) &&
-                    (
-                      (followBtn && followBtn.parentElement) ||
-                      a.parentElement
-                    ).appendChild(placeholder);
+                  const parent =
+                    (followBtn && followBtn.parentElement) || a.parentElement;
+                  if (parent) parent.appendChild(placeholder);
                 } catch (e2) {}
               }
 
@@ -954,16 +977,7 @@
 
               (async () => {
                 try {
-                  const dom = await ensure("src/utils/follow/dom.js");
-                  if (!dom) {
-                    dom &&
-                      dom.replaceWithBadge(
-                        placeholder,
-                        "unknown",
-                        "github-utils-list-badge",
-                      );
-                    return;
-                  }
+                  const dom = followDom;
                   const resp = await resolveFollowStatus(viewer, name);
                   if (!resp)
                     dom.replaceWithBadge(
@@ -996,34 +1010,31 @@
     } catch (e) {}
   }
 
-  function scanHover(root) {
+  function scanHover(root: HTMLElement): void {
     const card =
       root.querySelector &&
-      (root.querySelector("[data-hovercard-url]") ||
-        root.querySelector(".Popover-message") ||
+      (root.querySelector<ContentElement>("[data-hovercard-url]") ||
+        root.querySelector<ContentElement>(".Popover-message") ||
         root);
     if (!card) return;
-    const domPath = "src/utils/follow/dom.js";
-    ensure(domPath)
+    Promise.resolve(followDom)
       .then(async (dom) => {
-        if (!dom) return;
-        const anchor = card.querySelector('a[href^="/"]');
+        const anchor = card.querySelector<ContentElement>('a[href^="/"]');
         if (!anchor) return;
-        const name = anchor
-          .getAttribute("href")
-          .replace(/^\//, "")
-          .replace(/\/$/, "");
+        const href = anchor.getAttribute("href");
+        if (!href) return;
+        const name = href.replace(/^\//, "").replace(/\/$/, "");
         const viewer = getCurrentUser();
         if (!name || name === viewer) return;
         if (IGNORED_PATHS.includes(name.toLowerCase())) return;
         if (
-          card.querySelector(
+          card.querySelector<ContentElement>(
             ".github-utils-hover-badge, .github-utils-list-badge",
           )
         )
           return;
         const followBtn = Array.from(
-          card.querySelectorAll('input[type="submit"],button'),
+          card.querySelectorAll<ContentElement>('input[type="submit"],button'),
         ).find((b) => {
           try {
             const s = (
@@ -1042,7 +1053,9 @@
         placeholder.className = "github-utils-hover-badge";
         placeholder.textContent = "...";
         const targetEl =
-          followBtn || card.querySelector(".Popover-message") || card;
+          followBtn ||
+          card.querySelector<ContentElement>(".Popover-message") ||
+          card;
         if (!targetEl) return;
         if (followBtn) {
           followBtn.insertAdjacentElement("afterend", placeholder);
@@ -1070,7 +1083,7 @@
       .catch(() => {});
   }
 
-  let retryTimer = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   function schedule() {
     if (retryTimer) clearTimeout(retryTimer);
     // Skip follow logic on disallowed pages (e.g., repo pages)
@@ -1082,13 +1095,13 @@
       try {
         scan(document);
         scanFeed(document);
-        const pop = document.querySelectorAll(
+        const pop = document.querySelectorAll<ContentElement>(
           "[data-hovercard-url], .Popover-message",
         );
         pop.forEach((p) => scanHover(p));
       } catch (e) {}
       if (
-        document.querySelector(
+        document.querySelector<ContentElement>(
           ".h-card, .vcard, .d-table, .user-following-container",
         ) ||
         attempt >= max
@@ -1104,7 +1117,7 @@
   // booted before the token gate; follow badges inside the injected feed
   // still require a token.
   try {
-    ensure("src/utils/homefeed/feed.js").then((feedMod) => {
+    Promise.resolve({ startHomeFeed }).then((feedMod) => {
       try {
         if (feedMod && feedMod.startHomeFeed) {
           feedMod.startHomeFeed({
@@ -1124,13 +1137,14 @@
 
   // Ensure badges inside follow forms are moved to checker container when a follow/unfollow action occurs
   (function attachFollowProtectionHandlers() {
-    function isFollowButton(el) {
+    function isFollowButton(el: Element): boolean {
       try {
+        const button = el as ContentElement;
         const s = (
           el.getAttribute("aria-label") ||
-          el.title ||
+          button.title ||
           el.textContent ||
-          el.innerText ||
+          button.innerText ||
           ""
         )
           .toString()
@@ -1141,9 +1155,9 @@
       }
     }
 
-    function moveBadgesForButton(btn) {
+    function moveBadgesForButton(btn: ContentElement): void {
       try {
-        ensure("src/utils/follow/dom.js")
+        Promise.resolve(followDom)
           .then((dom) => {
             try {
               // Move badges inside the same form/container
@@ -1159,7 +1173,10 @@
                 );
                 badges.forEach((b) => {
                   try {
-                    dom.appendBadgeToChecker(btn, b);
+                    dom.appendBadgeToChecker(
+                      asContentElement(btn),
+                      asContentElement(b),
+                    );
                   } catch (e) {}
                 });
               }
@@ -1172,7 +1189,7 @@
                   after.classList.contains("github-utils-follow-badge"))
               ) {
                 try {
-                  dom.appendBadgeToChecker(btn, after);
+                  dom.appendBadgeToChecker(btn, asContentElement(after));
                 } catch (e) {}
               }
             } catch (e) {}
@@ -1185,15 +1202,13 @@
       "click",
       (ev) => {
         try {
-          const btn =
-            ev.target &&
-            ev.target.closest &&
-            ev.target.closest('input[type="submit"],button');
+          const target = ev.target as Element | null;
+          const btn = target?.closest('input[type="submit"],button');
           if (!btn) return;
           if (!isFollowButton(btn)) return;
           // move badges immediately (before DOM mutations) and again shortly after
-          moveBadgesForButton(btn);
-          setTimeout(() => moveBadgesForButton(btn), 120);
+          moveBadgesForButton(asContentElement(btn));
+          setTimeout(() => moveBadgesForButton(asContentElement(btn)), 120);
         } catch (e) {}
       },
       true,
@@ -1203,13 +1218,13 @@
       "submit",
       (ev) => {
         try {
-          const btn =
-            ev.target &&
-            ev.target.querySelector &&
-            (ev.target.querySelector('input[type="submit"],button') || null);
+          const target = ev.target as Element | null;
+          const btn = target?.querySelector<ContentElement>(
+            'input[type="submit"],button',
+          );
           if (!btn) return;
           if (!isFollowButton(btn)) return;
-          moveBadgesForButton(btn);
+          moveBadgesForButton(asContentElement(btn));
         } catch (e) {}
       },
       true,
@@ -1217,10 +1232,10 @@
   })();
 
   let __gh_last_inject_at = 0;
-  const mo = new MutationObserver((mutations) => {
+  const mo = new MutationObserver((_mutations) => {
     if (location.href !== window.__gh_last_location) {
       try {
-        ensure("src/utils/follow/client.js")
+        Promise.resolve(followClient)
           .then((m) => {
             try {
               if (m && m.clearCache) m.clearCache();
@@ -1236,7 +1251,7 @@
     if (now - __gh_last_inject_at < 200) return;
     __gh_last_inject_at = now;
 
-    for (const m of mutations) {
+    for (const m of _mutations) {
       for (const n of m.addedNodes) {
         if (!(n instanceof HTMLElement)) continue;
         if (n.matches && n.matches(".h-card, .vcard, #js-pjax-container")) {
@@ -1251,7 +1266,7 @@
                 "article, .js-feed-item-component, .news, .TimelineItem, .js-timeline-item, .news-item",
               )) ||
             (n.querySelector &&
-              n.querySelector(
+              n.querySelector<ContentElement>(
                 "article, .js-feed-item-component, .news, .TimelineItem, .js-timeline-item, .news-item",
               ))
           ) {
@@ -1263,35 +1278,35 @@
 
         if (
           n.querySelector &&
-          n.querySelector("[data-hovercard-url], .Popover-message")
+          n.querySelector<ContentElement>(
+            "[data-hovercard-url], .Popover-message",
+          )
         ) {
           const popup =
-            n.querySelector("[data-hovercard-url]") ||
-            n.querySelector(".Popover-message") ||
+            n.querySelector<ContentElement>("[data-hovercard-url]") ||
+            n.querySelector<ContentElement>(".Popover-message") ||
             n;
           scanHover(popup);
         }
         try {
           const path = location.pathname;
-          if (/^\/[^\/]+\/[^\/]+\/settings/.test(path)) {
-            if (!document.querySelector(".gh-autocomplete-panel")) {
+          if (/^\/[^/]+\/[^/]+\/settings/.test(path)) {
+            if (
+              !document.querySelector<ContentElement>(".gh-autocomplete-panel")
+            ) {
               (async () => {
                 try {
                   console.debug(
                     "[gh-utils] attempting to inject autocomplete panel",
                   );
-                  const dom = await import(
-                    chrome.runtime.getURL("src/utils/autocomplete/dom.js")
-                  );
-                  const actions = await import(
-                    chrome.runtime.getURL("src/utils/autocomplete/actions.js")
-                  );
+                  const dom = autocompleteDom;
+                  const actions = autocompleteActions;
                   let target = dom.findDangerZone();
                   if (!target) {
                     console.debug(
                       "[gh-utils] findDangerZone returned null, trying fallbacks",
                     );
-                    target = document.querySelector(
+                    target = document.querySelector<ContentElement>(
                       "#options_bucket, .repository-content, main, #repo-content-pjax-container",
                     );
                   }
@@ -1299,13 +1314,16 @@
                     console.debug("[gh-utils] injecting panel into", target);
                     const headingContainer =
                       document
-                        .querySelector("#danger-zone")
+                        .querySelector<ContentElement>("#danger-zone")
                         ?.closest(".Subhead") ||
-                      document.querySelector("#danger-zone")?.parentElement ||
+                      document.querySelector<ContentElement>("#danger-zone")
+                        ?.parentElement ||
                       target;
                     if (headingContainer) {
                       headingContainer
-                        .querySelectorAll(".gh-autocomplete-panel")
+                        .querySelectorAll<ContentElement>(
+                          ".gh-autocomplete-panel",
+                        )
                         .forEach((n) => n.remove());
                     }
 
@@ -1315,9 +1333,12 @@
                       chrome.storage.sync.get(
                         ["github_utils_token"],
                         (items) => {
-                          const token = items.github_utils_token;
+                          const token = (items as Record<string, unknown>)
+                            .github_utils_token as string | null;
                           document
-                            .querySelectorAll(".gh-autoc-autoexec")
+                            .querySelectorAll<ContentElement>(
+                              ".gh-autoc-autoexec",
+                            )
                             .forEach((cb) => {
                               cb.disabled = !token;
                               if (!token)
@@ -1333,15 +1354,24 @@
                       );
                     }
 
-                    async function performAutoAction(btn, inline, statusEl) {
+                    async function performAutoAction(
+                      btn: ContentElement,
+                      inline: HTMLElement,
+                      statusEl: HTMLElement | null,
+                    ): Promise<void> {
                       try {
                         if (inline.dataset.ghAutocHandled) return;
                         inline.dataset.ghAutocHandled = "1";
-                        const token = await new Promise((resolve) =>
-                          chrome.storage.sync.get(
-                            ["github_utils_token"],
-                            (items) => resolve(items.github_utils_token),
-                          ),
+                        const token = await new Promise<string | null>(
+                          (resolve) =>
+                            chrome.storage.sync.get(
+                              ["github_utils_token"],
+                              (items) =>
+                                resolve(
+                                  (items as Record<string, unknown>)
+                                    .github_utils_token as string | null,
+                                ),
+                            ),
                         );
                         if (!token) {
                           statusEl &&
@@ -1365,7 +1395,12 @@
                         if (act === "archive") {
                           const info = await actions.apiGetRepo(repo, token);
                           const currentlyArchived =
-                            info && info.ok && info.json && info.json.archived;
+                            info &&
+                            info.ok &&
+                            typeof info.json === "object" &&
+                            info.json !== null &&
+                            "archived" in info.json &&
+                            info.json.archived === true;
                           const newArchived = !currentlyArchived;
                           apiRes = await actions.apiSetArchived(
                             repo,
@@ -1384,8 +1419,12 @@
                                 : "Archive this repository";
                               if (pageBtn) {
                                 const lbl =
-                                  pageBtn.querySelector(".Button-label") ||
-                                  pageBtn.querySelector(".Button-content") ||
+                                  pageBtn.querySelector<ContentElement>(
+                                    ".Button-label",
+                                  ) ||
+                                  pageBtn.querySelector<ContentElement>(
+                                    ".Button-content",
+                                  ) ||
                                   pageBtn;
                                 if (lbl) lbl.textContent = newLabel;
                               }
@@ -1397,9 +1436,10 @@
                             statusEl &&
                               (statusEl.textContent = `API failed: ${apiRes?.status || "unknown"}`);
                         } else if (act === "delete") {
-                          let confirmInput = inline.querySelector(
-                            ".gh-autoc-confirm-delete-input",
-                          );
+                          const confirmInput =
+                            inline.querySelector<ContentElement>(
+                              ".gh-autoc-confirm-delete-input",
+                            );
                           if (!confirmInput) {
                             const lbl = document.createElement("label");
                             lbl.className =
@@ -1436,13 +1476,15 @@
                         );
                       } catch (e) {
                         statusEl &&
-                          (statusEl.textContent = `API error: ${e.message || e}`);
+                          (statusEl.textContent = `API error: ${describeError(e)}`);
                         delete inline.dataset.ghAutocHandled;
                       }
                     }
 
                     Array.from(
-                      document.querySelectorAll(".gh-autoc-btn"),
+                      document.querySelectorAll<ContentElement>(
+                        ".gh-autoc-btn",
+                      ),
                     ).forEach((btn) => {
                       if (btn.dataset.ghAutocBound) return;
                       btn.dataset.ghAutocBound = "1";
@@ -1454,8 +1496,7 @@
                             (ev) => {
                               try {
                                 ev.preventDefault();
-                                ev.stopImmediatePropagation &&
-                                  ev.stopImmediatePropagation();
+                                ev.stopImmediatePropagation();
                                 ev.stopPropagation();
                               } catch (e) {}
                             },
@@ -1468,17 +1509,21 @@
                         "click",
                         async function captureAutoHandler(ev) {
                           try {
-                            const inline = btn.closest(".gh-autoc-inline");
+                            const inline = btn.closest(
+                              ".gh-autoc-inline",
+                            ) as HTMLElement | null;
+                            if (!inline) return;
                             ev.preventDefault();
-                            ev.stopImmediatePropagation &&
-                              ev.stopImmediatePropagation();
+                            ev.stopImmediatePropagation();
                             ev.stopPropagation();
-                            const statusEl = inline?.querySelector(
-                              ".gh-autoc-inline-status",
-                            );
+                            const statusEl =
+                              inline?.querySelector<ContentElement>(
+                                ".gh-autoc-inline-status",
+                              );
                             const autoOn =
-                              inline?.querySelector(".gh-autoc-autoexec")
-                                ?.checked || false;
+                              inline?.querySelector<ContentElement>(
+                                ".gh-autoc-autoexec",
+                              )?.checked || false;
                             if (autoOn) {
                               await performAutoAction(btn, inline, statusEl);
                               return;
@@ -1509,7 +1554,7 @@
                                   (statusEl.textContent = `Failed: ${res?.reason || "unknown"}`);
                             } catch (e) {
                               statusEl &&
-                                (statusEl.textContent = `Error: ${e.message || e}`);
+                                (statusEl.textContent = `Error: ${describeError(e)}`);
                             }
                           } catch (e) {}
                         },
@@ -1520,28 +1565,36 @@
                         try {
                           ev.preventDefault();
                           ev.stopPropagation();
-                          ev.stopImmediatePropagation &&
-                            ev.stopImmediatePropagation();
+                          ev.stopImmediatePropagation();
                         } catch (e) {}
                         const act = btn.dataset.action;
-                        const inline = btn.closest(".gh-autoc-inline");
+                        const inline = btn.closest(
+                          ".gh-autoc-inline",
+                        ) as HTMLElement | null;
+                        if (!inline) return;
 
                         if (inline?.dataset.ghAutocHandled) {
                           return;
                         }
 
                         const autoexec =
-                          inline?.querySelector(".gh-autoc-autoexec")
-                            ?.checked || false;
-                        const statusEl = inline?.querySelector(
+                          inline?.querySelector<ContentElement>(
+                            ".gh-autoc-autoexec",
+                          )?.checked || false;
+                        const statusEl = inline?.querySelector<ContentElement>(
                           ".gh-autoc-inline-status",
                         );
                         if (autoexec) {
-                          const token = await new Promise((resolve) =>
-                            chrome.storage.sync.get(
-                              ["github_utils_token"],
-                              (items) => resolve(items.github_utils_token),
-                            ),
+                          const token = await new Promise<string | null>(
+                            (resolve) =>
+                              chrome.storage.sync.get(
+                                ["github_utils_token"],
+                                (items) =>
+                                  resolve(
+                                    (items as Record<string, unknown>)
+                                      .github_utils_token as string | null,
+                                  ),
+                              ),
                           );
                           if (!token) {
                             statusEl &&
@@ -1577,9 +1630,10 @@
                                 statusEl &&
                                   (statusEl.textContent = `API failed: ${apiRes?.status || "unknown"}`);
                             } else if (act === "delete") {
-                              let confirmInput = inline.querySelector(
-                                ".gh-autoc-confirm-delete-input",
-                              );
+                              const confirmInput =
+                                inline.querySelector<ContentElement>(
+                                  ".gh-autoc-confirm-delete-input",
+                                );
                               if (!confirmInput) {
                                 const lbl = document.createElement("label");
                                 lbl.className =
@@ -1613,7 +1667,7 @@
                             }
                           } catch (e) {
                             statusEl &&
-                              (statusEl.textContent = `API error: ${e.message || e}`);
+                              (statusEl.textContent = `API error: ${describeError(e)}`);
                           }
 
                           return;
@@ -1645,7 +1699,7 @@
                           }
                         } catch (e) {
                           statusEl &&
-                            (statusEl.textContent = `Error: ${e.message || e}`);
+                            (statusEl.textContent = `Error: ${describeError(e)}`);
                         }
                       });
                     });
@@ -1674,23 +1728,25 @@
       if (area !== "sync") return;
       if (!changes || !changes.github_utils_token) return;
       const token = changes.github_utils_token.newValue;
-      document.querySelectorAll(".gh-autoc-autoexec").forEach((cb) => {
-        cb.disabled = !token;
-        if (!token)
-          cb.title =
-            "Auto execute requires a GitHub token (set in extension popup)";
-        else cb.title = "";
-      });
+      document
+        .querySelectorAll<ContentElement>(".gh-autoc-autoexec")
+        .forEach((cb) => {
+          cb.disabled = !token;
+          if (!token)
+            cb.title =
+              "Auto execute requires a GitHub token (set in extension popup)";
+          else cb.title = "";
+        });
     });
   }
 
-  function isFollowButtonElement(el) {
+  function isFollowButtonElement(el: Element): boolean {
     try {
       if (!el || !(el instanceof HTMLElement)) return false;
       if (!/input|button/i.test(el.tagName)) return false;
       const s =
         (el.getAttribute && (el.getAttribute("aria-label") || el.title)) ||
-        el.value ||
+        (el as ContentElement).value ||
         el.textContent ||
         el.innerText ||
         "";
@@ -1700,7 +1756,7 @@
     }
   }
 
-  function rescanContainer(container, maxAttempts = 4) {
+  function rescanContainer(container: ContentContainer, maxAttempts = 4): void {
     let attempt = 0;
     const tryRun = () => {
       attempt++;
@@ -1714,11 +1770,11 @@
     try {
       const el =
         container && container instanceof HTMLElement ? container : document;
-      const obs = new MutationObserver((mutations) => {
+      const obs = new MutationObserver((_mutations) => {
         try {
           if (
             el.querySelector &&
-            el.querySelector(
+            el.querySelector<ContentElement>(
               ".github-utils-list-badge, .github-utils-follow-badge",
             )
           ) {
@@ -1726,10 +1782,11 @@
             return;
           }
           if (
-            el.querySelector &&
-            Array.from(el.querySelectorAll('input[type="submit"],button')).some(
-              isFollowButtonElement,
-            )
+            Array.from(
+              el.querySelectorAll<ContentElement>(
+                'input[type="submit"],button',
+              ),
+            ).some(isFollowButtonElement)
           ) {
             try {
               scan(el);
@@ -1749,21 +1806,24 @@
     } catch (e) {}
   }
 
-  async function attemptQuickBadgeUpdate(btn, container) {
+  async function attemptQuickBadgeUpdate(
+    btn: ContentElement,
+    _container: ContentContainer,
+  ): Promise<boolean> {
     try {
-      const dom = await ensure("src/utils/follow/dom.js");
-      const client = await ensure("src/utils/follow/client.js");
+      const dom = followDom;
+      const client = followClient;
       if (!dom || !client) return false;
       const viewer = getCurrentUser();
       if (!viewer) return false;
-      const name = dom.extractUsernameFromButton(btn);
+      const name = dom.extractUsernameFromButton(asButtonElement(btn));
       if (!name) return false;
       const row =
         btn.closest(".d-table") || btn.closest("li") || btn.closest("div");
       if (
         row &&
         row.querySelector &&
-        row.querySelector(
+        row.querySelector<ContentElement>(
           ".github-utils-list-badge, .github-utils-follow-badge",
         )
       )
@@ -1807,19 +1867,17 @@
     "click",
     (ev) => {
       try {
-        const target = ev.target;
-        const btn =
-          target && target.closest
-            ? target.closest('input[type="submit"],button')
-            : null;
+        const target = ev.target as Element | null;
+        const btn = target?.closest('input[type="submit"],button');
         if (!btn) return;
         if (!isFollowButtonElement(btn)) return;
-        const container =
-          btn.closest(".d-table") ||
+        const container = (btn.closest(".d-table") ||
           btn.closest("li") ||
           btn.closest("div") ||
-          document;
-        attemptQuickBadgeUpdate(btn, container).catch(() => {});
+          document) as ContentContainer;
+        attemptQuickBadgeUpdate(asContentElement(btn), container).catch(
+          () => {},
+        );
         setTimeout(() => rescanContainer(container), 200);
       } catch (e) {}
     },
@@ -1830,16 +1888,19 @@
     "submit",
     (ev) => {
       try {
-        const form = ev.target;
+        const form = ev.target as Element | null;
         if (!form) return;
-        const submitBtn = form.querySelector('input[type="submit"],button');
+        const submitBtn = form.querySelector<ContentElement>(
+          'input[type="submit"],button',
+        );
         if (!submitBtn || !isFollowButtonElement(submitBtn)) return;
-        const container =
-          submitBtn.closest(".d-table") ||
+        const container = (submitBtn.closest(".d-table") ||
           submitBtn.closest("li") ||
           submitBtn.closest("div") ||
-          document;
-        attemptQuickBadgeUpdate(submitBtn, container).catch(() => {});
+          document) as ContentContainer;
+        attemptQuickBadgeUpdate(asContentElement(submitBtn), container).catch(
+          () => {},
+        );
         setTimeout(() => rescanContainer(container), 250);
       } catch (e) {}
     },
@@ -1854,7 +1915,9 @@
   schedule();
   if (shouldRunFollowLogic()) {
     document
-      .querySelectorAll("[data-hovercard-url], .Popover-message")
+      .querySelectorAll<ContentElement>(
+        "[data-hovercard-url], .Popover-message",
+      )
       .forEach((p) => scanHover(p));
     try {
       // initial feed scan
