@@ -14,26 +14,35 @@ const LIST_CLASS = "gh-utils-feed-list";
 const CONDUIT_URL = "/conduit/for_you_feed?source=feed_page";
 const FETCH_HEADERS = { Accept: "*/*", "X-Requested-With": "XMLHttpRequest" };
 
+interface HomeFeedOptions {
+  onItems?: (root: HTMLElement) => void;
+}
+
+interface FeedNodes {
+  items: Element[];
+  moreForm: HTMLFormElement | null;
+}
+
 let started = false;
 let injecting = false;
 let navWatchAt = 0;
 
-function isHomePage() {
+function isHomePage(): boolean {
   const p = location.pathname;
   return p === "/" || p === "";
 }
 
-function hasNativeFeed() {
+function hasNativeFeed(): boolean {
   // If GitHub ever serves the feed on home again, don't inject a second one.
   return !!document.querySelector("feed-container");
 }
 
-async function fetchFeedDocument(url) {
+async function fetchFeedDocument(url: string): Promise<Document> {
   const resp = await fetch(url, {
     credentials: "same-origin",
     headers: FETCH_HEADERS,
   });
-  if (!resp.ok) throw new Error("feed fetch failed: " + resp.status);
+  if (!resp.ok) throw new Error(`feed fetch failed: ${resp.status}`);
   const text = await resp.text();
   return new DOMParser().parseFromString(text, "text/html");
 }
@@ -44,10 +53,10 @@ async function fetchFeedDocument(url) {
  * placeholders stay with the items (they belong to the "Show less activity"
  * UI inside the items).
  */
-function extractFeedNodes(doc) {
+function extractFeedNodes(doc: Document): FeedNodes {
   const frame = doc.querySelector("turbo-frame");
-  const items = [];
-  let moreForm = null;
+  const items: Element[] = [];
+  let moreForm: HTMLFormElement | null = null;
   if (frame) {
     for (const child of Array.from(frame.children)) {
       if (child.tagName === "FEED-LIVE-CONTAINER") continue;
@@ -55,7 +64,7 @@ function extractFeedNodes(doc) {
         child.tagName === "FORM" &&
         child.classList.contains("ajax-pagination-form")
       ) {
-        moreForm = child;
+        moreForm = child as HTMLFormElement;
         continue;
       }
       items.push(child);
@@ -64,7 +73,7 @@ function extractFeedNodes(doc) {
   return { items, moreForm };
 }
 
-function documentHasFeedStyles() {
+function documentHasFeedStyles(): boolean {
   return Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some(
     (l) => /feed/i.test(l.getAttribute("href") || ""),
   );
@@ -74,7 +83,7 @@ function documentHasFeedStyles() {
  * The home page normally already bundles the feed stylesheets; if GitHub
  * drops them, copy the feed-related ones from the /feed page.
  */
-async function ensureFeedStyles() {
+async function ensureFeedStyles(): Promise<void> {
   if (documentHasFeedStyles()) return;
   try {
     const resp = await fetch("/feed", { credentials: "same-origin" });
@@ -96,10 +105,10 @@ async function ensureFeedStyles() {
       clone.crossOrigin = "anonymous";
       document.head.appendChild(clone);
     }
-  } catch (e) {}
+  } catch {}
 }
 
-function buildSection() {
+function buildSection(): HTMLElement {
   const section = document.createElement("div");
   section.id = SECTION_ID;
 
@@ -121,14 +130,22 @@ function buildSection() {
   return section;
 }
 
-function notifyItems(onItems, root) {
+function notifyItems(
+  onItems: ((root: HTMLElement) => void) | undefined,
+  root: HTMLElement,
+): void {
   if (!onItems) return;
   try {
     onItems(root);
-  } catch (e) {}
+  } catch {}
 }
 
-async function loadMore(section, list, form, onItems) {
+async function loadMore(
+  section: HTMLElement,
+  list: HTMLElement,
+  form: HTMLFormElement,
+  onItems: ((root: HTMLElement) => void) | undefined,
+): Promise<void> {
   const url = form.getAttribute("action");
   if (!url) return;
   const btn = form.querySelector("button");
@@ -143,7 +160,7 @@ async function loadMore(section, list, form, onItems) {
     if (moreForm) form.replaceWith(document.importNode(moreForm, true));
     else form.remove();
     if (items.length) notifyItems(onItems, section);
-  } catch (e) {
+  } catch {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "More";
@@ -153,32 +170,39 @@ async function loadMore(section, list, form, onItems) {
 
 // Document-level delegation survives Turbo navigation and cache restores,
 // which drop listeners attached to swapped-out nodes.
-function bindPagination(onItems) {
+function bindPagination(onItems: ((root: HTMLElement) => void) | undefined) {
   document.addEventListener(
     "click",
     (ev) => {
+      const target = ev.target as Element | null;
       const btn =
-        ev.target && ev.target.closest
-          ? ev.target.closest("#" + SECTION_ID + " .ajax-pagination-btn")
+        target && target.closest
+          ? target.closest(`#${SECTION_ID} .ajax-pagination-btn`)
           : null;
       if (!btn) return;
       ev.preventDefault();
       ev.stopPropagation();
       const section = document.getElementById(SECTION_ID);
       const form = btn.closest("form.ajax-pagination-form");
-      const list = section && section.querySelector("." + LIST_CLASS);
+      const list = section?.querySelector(`.${LIST_CLASS}`);
       if (!section || !form || !list) return;
-      loadMore(section, list, form, onItems);
+      void loadMore(
+        section,
+        list as HTMLElement,
+        form as HTMLFormElement,
+        onItems,
+      );
     },
     true,
   );
   document.addEventListener(
     "submit",
     (ev) => {
+      const target = ev.target as Element | null;
       if (
-        ev.target &&
-        ev.target.matches &&
-        ev.target.matches("#" + SECTION_ID + " form.ajax-pagination-form")
+        target &&
+        target.matches &&
+        target.matches(`#${SECTION_ID} form.ajax-pagination-form`)
       )
         ev.preventDefault();
     },
@@ -186,12 +210,12 @@ function bindPagination(onItems) {
   );
 }
 
-function waitForDashboard(timeoutMs) {
+function waitForDashboard(timeoutMs: number): Promise<HTMLElement | null> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const check = () => {
       const dashboard = document.querySelector("#dashboard");
-      if (dashboard) return resolve(dashboard);
+      if (dashboard) return resolve(dashboard as HTMLElement);
       if (!isHomePage() || Date.now() - startedAt > timeoutMs)
         return resolve(null);
       setTimeout(check, 300);
@@ -200,7 +224,9 @@ function waitForDashboard(timeoutMs) {
   });
 }
 
-async function injectFeed(onItems) {
+async function injectFeed(
+  onItems: ((root: HTMLElement) => void) | undefined,
+): Promise<void> {
   if (!isHomePage() || injecting) return;
   if (document.getElementById(SECTION_ID) || hasNativeFeed()) return;
   injecting = true;
@@ -219,7 +245,7 @@ async function injectFeed(onItems) {
     if (!items.length) return;
 
     const section = buildSection();
-    const list = section.querySelector("." + LIST_CLASS);
+    const list = section.querySelector(`.${LIST_CLASS}`) as HTMLElement;
     for (const node of items) list.appendChild(document.importNode(node, true));
     if (moreForm) section.appendChild(document.importNode(moreForm, true));
     dashboard.appendChild(section);
@@ -227,7 +253,7 @@ async function injectFeed(onItems) {
   } catch (e) {
     try {
       console.warn("[gh-utils] home feed injection failed", e);
-    } catch (e2) {}
+    } catch {}
   } finally {
     injecting = false;
   }
@@ -238,24 +264,24 @@ async function injectFeed(onItems) {
  * injection only happens on github.com/ and re-runs after SPA navigation.
  * onItems(root) is called with the feed section whenever items are added.
  */
-export function startHomeFeed({ onItems } = {}) {
+export function startHomeFeed({ onItems }: HomeFeedOptions = {}): void {
   if (started) return;
   started = true;
   bindPagination(onItems);
-  injectFeed(onItems);
+  void injectFeed(onItems);
 
   const onNav = () => {
-    injectFeed(onItems);
+    void injectFeed(onItems);
   };
   try {
     window.addEventListener("turbo:load", onNav);
-  } catch (e) {}
+  } catch {}
   try {
     window.addEventListener("pjax:end", onNav);
-  } catch (e) {}
+  } catch {}
   try {
     window.addEventListener("popstate", onNav);
-  } catch (e) {}
+  } catch {}
 
   // Turbo can swap the page without firing the events above; watch for the
   // dashboard reappearing without our section (throttled).
@@ -268,9 +294,9 @@ export function startHomeFeed({ onItems } = {}) {
       !document.getElementById(SECTION_ID) &&
       document.querySelector("#dashboard")
     )
-      injectFeed(onItems);
+      void injectFeed(onItems);
   });
   try {
     mo.observe(document.documentElement, { childList: true, subtree: true });
-  } catch (e) {}
+  } catch {}
 }
