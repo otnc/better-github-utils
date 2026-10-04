@@ -3,3 +3,7 @@ node_modules/
 .claude/
 .private/
 dist/
+.claude/
+.agent/
+.agents/*
+!.agents/skills/

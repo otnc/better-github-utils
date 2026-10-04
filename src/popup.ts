@@ -78,12 +78,19 @@ document.addEventListener("DOMContentLoaded", () => {
         setRate('<span class="warn">Rate status unavailable</span>');
         return;
       }
-      const json = await res.json();
-      const core = json.resources.core ||
-        json.resources.core || { remaining: 0, limit: 0, reset: 0 };
-      const rem = core.remaining;
-      const lim = core.limit;
-      const reset = core.reset;
+      const json = (await res.json()) as {
+        resources?: {
+          core?: { remaining?: number; limit?: number; reset?: number };
+        };
+      };
+      const core = json.resources?.core ?? {
+        remaining: 0,
+        limit: 0,
+        reset: 0,
+      };
+      const rem = core.remaining ?? 0;
+      const lim = core.limit ?? 0;
+      const reset = core.reset ?? 0;
       if (rem <= 0)
         setRate(
           `<span class="warn">Rate limited</span> — ${rem}/${lim} (resets ${readableReset(reset)})`,

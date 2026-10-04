@@ -17,6 +17,12 @@ export default tseslint.config(
     rules: {
       // Best-effort chrome API calls are wrapped in intentionally empty catches (a failed call just skips that step).
       "no-empty": ["error", { allowEmptyCatch: true }],
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { caughtErrors: "none", argsIgnorePattern: "^_" },
+      ],
+      "no-unused-expressions": "off",
+      "@typescript-eslint/no-unused-expressions": "off",
     },
   },
   prettier,
