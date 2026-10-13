@@ -3,6 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite build --watch",
     "build": "node scripts/sync-version.js && vite build && node scripts/package.js",

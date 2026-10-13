@@ -85,7 +85,7 @@ function loadPersistentCache(): Promise<void> {
 // Load persisted cache on startup
 loadPersistentCache().catch(() => {});
 
-function parseLinkHeader(header: string | null): Record<string, string> {
+export function parseLinkHeader(header: string | null): Record<string, string> {
   if (!header) return {};
   const parts = header.split(",");
   const map: Record<string, string> = {};
