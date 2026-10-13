@@ -156,8 +156,8 @@ async function loadMore(
   try {
     const doc = await fetchFeedDocument(url);
     const { items, moreForm } = extractFeedNodes(doc);
-    for (const node of items) list.appendChild(document.importNode(node, true));
-    if (moreForm) form.replaceWith(document.importNode(moreForm, true));
+    for (const node of items) list.appendChild(importFeedNode(node));
+    if (moreForm) form.replaceWith(importFeedNode(moreForm));
     else form.remove();
     if (items.length) notifyItems(onItems, section);
   } catch {
@@ -249,13 +249,20 @@ async function submitFeedForm(
   try {
     const data = new FormData(form);
     const method = (data.get("_method") as string) || form.method || "POST";
+    // Match the headers GitHub's own JS sends for js-social-form requests;
+    // the server rejects other Accept values with "Sorry, something went wrong".
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    };
+    const nonceMeta = document.querySelector<HTMLMetaElement>(
+      'meta[name="fetch-nonce"]',
+    );
+    if (nonceMeta?.content) headers["X-Fetch-Nonce"] = nonceMeta.content;
     const res = await fetch(form.action, {
       method: method.toUpperCase(),
       credentials: "same-origin",
-      headers: {
-        Accept: "text/html, application/xhtml+xml, application/xml",
-        "X-Requested-With": "XMLHttpRequest",
-      },
+      headers,
       body: data,
       redirect: "follow",
     });
@@ -269,6 +276,28 @@ async function submitFeedForm(
     } catch {}
     if (submitter) submitter.disabled = false;
   }
+}
+
+/**
+ * Imported nodes keep the data-catalyst marker from the /feed page, but the
+ * Catalyst controller instances are not copied with the DOM. Strip the
+ * marker so GitHub's Catalyst framework re-attaches controllers (e.g. the
+ * user-list-menu behind the "Add to list" button) to the imported nodes.
+ */
+function reviveCatalystControllers(node: Element): void {
+  try {
+    if (node.hasAttribute("data-catalyst"))
+      node.removeAttribute("data-catalyst");
+    node
+      .querySelectorAll("[data-catalyst]")
+      .forEach((el) => el.removeAttribute("data-catalyst"));
+  } catch {}
+}
+
+function importFeedNode(node: Element): Element {
+  const imported = document.importNode(node, true);
+  reviveCatalystControllers(imported);
+  return imported;
 }
 
 /**
@@ -287,10 +316,10 @@ async function refreshFeed(
     const { items, moreForm } = extractFeedNodes(doc);
     if (!items.length) return;
     while (list.firstChild) list.removeChild(list.firstChild);
-    for (const node of items) list.appendChild(document.importNode(node, true));
+    for (const node of items) list.appendChild(importFeedNode(node));
     const oldMore = section.querySelector("form.ajax-pagination-form");
     if (oldMore) oldMore.remove();
-    if (moreForm) section.appendChild(document.importNode(moreForm, true));
+    if (moreForm) section.appendChild(importFeedNode(moreForm));
     notifyItems(onItems, section);
   } catch (e) {
     try {
@@ -335,8 +364,8 @@ async function injectFeed(
 
     const section = buildSection();
     const list = section.querySelector(`.${LIST_CLASS}`) as HTMLElement;
-    for (const node of items) list.appendChild(document.importNode(node, true));
-    if (moreForm) section.appendChild(document.importNode(moreForm, true));
+    for (const node of items) list.appendChild(importFeedNode(node));
+    if (moreForm) section.appendChild(importFeedNode(moreForm));
     dashboard.appendChild(section);
     notifyItems(onItems, section);
   } catch (e) {
