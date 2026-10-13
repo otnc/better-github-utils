@@ -294,9 +294,30 @@ function reviveCatalystControllers(node: Element): void {
   } catch {}
 }
 
+/**
+ * include-fragment sends its data-nonce as X-Fetch-Nonce-To-Validate. The
+ * nonce was issued for the /feed request context, so the server answers 403
+ * when it is validated against the home page. An empty value is rejected
+ * too, so swap in the home page's own fetch nonce.
+ */
+function refreshFragmentNonces(node: Element): void {
+  try {
+    const pageNonce = document.querySelector<HTMLMetaElement>(
+      'meta[name="fetch-nonce"]',
+    )?.content;
+    if (!pageNonce) return;
+    node
+      .querySelectorAll("include-fragment[data-nonce]")
+      .forEach((el) => el.setAttribute("data-nonce", pageNonce));
+    if (node.matches("include-fragment[data-nonce]"))
+      node.setAttribute("data-nonce", pageNonce);
+  } catch {}
+}
+
 function importFeedNode(node: Element): Element {
   const imported = document.importNode(node, true);
   reviveCatalystControllers(imported);
+  refreshFragmentNonces(imported);
   return imported;
 }
 
