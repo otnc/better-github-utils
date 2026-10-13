@@ -210,6 +210,95 @@ function bindPagination(onItems: ((root: HTMLElement) => void) | undefined) {
   );
 }
 
+/**
+ * Feed items are imported from the /feed page, so GitHub's own submit
+ * handlers (Rails UJS / Turbo) are not attached to them on the home page.
+ * Intercept form submissions inside the injected section and send them via
+ * fetch with the same-origin session, then refresh the feed so the new
+ * state (starred, following, …) is rendered.
+ */
+function bindFeedFormActions(
+  onItems: ((root: HTMLElement) => void) | undefined,
+) {
+  document.addEventListener(
+    "submit",
+    (ev) => {
+      const form = ev.target as Element | null;
+      if (
+        !form ||
+        !form.matches ||
+        !form.matches(`#${SECTION_ID} form:not(.ajax-pagination-form)`)
+      )
+        return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      void submitFeedForm(form as HTMLFormElement, onItems);
+    },
+    true,
+  );
+}
+
+async function submitFeedForm(
+  form: HTMLFormElement,
+  onItems: ((root: HTMLElement) => void) | undefined,
+): Promise<void> {
+  const submitter = form.querySelector<HTMLButtonElement>(
+    'button[type="submit"], input[type="submit"]',
+  );
+  if (submitter) submitter.disabled = true;
+  try {
+    const data = new FormData(form);
+    const method = (data.get("_method") as string) || form.method || "POST";
+    const res = await fetch(form.action, {
+      method: method.toUpperCase(),
+      credentials: "same-origin",
+      headers: {
+        Accept: "text/html, application/xhtml+xml, application/xml",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: data,
+      redirect: "follow",
+    });
+    if (!res.ok) throw new Error(`feed form submit failed: ${res.status}`);
+    await refreshFeed(onItems);
+  } catch (e) {
+    try {
+      console.warn("[gh-utils] feed form submit failed", e, {
+        action: form.action,
+      });
+    } catch {}
+    if (submitter) submitter.disabled = false;
+  }
+}
+
+/**
+ * Re-fetch the first feed page and replace the injected items so state
+ * changes (star, follow, list) are reflected without a full page reload.
+ */
+async function refreshFeed(
+  onItems: ((root: HTMLElement) => void) | undefined,
+): Promise<void> {
+  const section = document.getElementById(SECTION_ID);
+  if (!section) return;
+  const list = section.querySelector(`.${LIST_CLASS}`) as HTMLElement | null;
+  if (!list) return;
+  try {
+    const doc = await fetchFeedDocument(CONDUIT_URL);
+    const { items, moreForm } = extractFeedNodes(doc);
+    if (!items.length) return;
+    while (list.firstChild) list.removeChild(list.firstChild);
+    for (const node of items) list.appendChild(document.importNode(node, true));
+    const oldMore = section.querySelector("form.ajax-pagination-form");
+    if (oldMore) oldMore.remove();
+    if (moreForm) section.appendChild(document.importNode(moreForm, true));
+    notifyItems(onItems, section);
+  } catch (e) {
+    try {
+      console.warn("[gh-utils] feed refresh failed", e);
+    } catch {}
+  }
+}
+
 function waitForDashboard(timeoutMs: number): Promise<HTMLElement | null> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -268,6 +357,7 @@ export function startHomeFeed({ onItems }: HomeFeedOptions = {}): void {
   if (started) return;
   started = true;
   bindPagination(onItems);
+  bindFeedFormActions(onItems);
   void injectFeed(onItems);
 
   const onNav = () => {

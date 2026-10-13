@@ -1128,6 +1128,17 @@ declare global {
               if (!hasToken) return;
               try {
                 scanFeed(root);
+                // The conduit response may wrap items in containers that
+                // don't match scanFeed's selectors; scan the list's direct
+                // children as a fallback so badges still appear.
+                const list = root.querySelector(".gh-utils-feed-list");
+                if (list) {
+                  Array.from(list.children).forEach((child) => {
+                    try {
+                      if (child instanceof HTMLElement) scanFeed(child);
+                    } catch (e) {}
+                  });
+                }
               } catch (e) {}
             },
           });
