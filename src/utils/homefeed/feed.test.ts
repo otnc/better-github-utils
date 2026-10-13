@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { extractFeedNodes } from "./feed";
+import { buildSection, extractFeedNodes } from "./feed";
 
 function parse(html: string): Document {
   return new DOMParser().parseFromString(html, "text/html");
@@ -44,5 +44,20 @@ describe("extractFeedNodes", () => {
     );
 
     expect(result).toEqual({ items: [], moreForm: null });
+  });
+});
+
+describe("buildSection", () => {
+  it("builds a section with a header, view-all link, and item list", () => {
+    const section = buildSection();
+
+    expect(section.id).toBe("gh-utils-home-feed");
+    const title = section.querySelector(".gh-utils-feed-title");
+    expect(title?.textContent).toBe("Feed");
+    const viewAll = section.querySelector(
+      ".gh-utils-feed-view-all",
+    ) as HTMLAnchorElement;
+    expect(viewAll.getAttribute("href")).toBe("/feed");
+    expect(section.querySelector(".gh-utils-feed-list")).not.toBeNull();
   });
 });

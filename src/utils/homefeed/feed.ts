@@ -108,7 +108,7 @@ async function ensureFeedStyles(): Promise<void> {
   } catch {}
 }
 
-function buildSection(): HTMLElement {
+export function buildSection(): HTMLElement {
   const section = document.createElement("div");
   section.id = SECTION_ID;
 
