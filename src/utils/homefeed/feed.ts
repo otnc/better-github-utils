@@ -301,6 +301,39 @@ function importFeedNode(node: Element): Element {
 }
 
 /**
+ * The "Add to list" dialog loads its items via an <include-fragment> with
+ * loading="lazy". On the home page the IntersectionObserver that should
+ * start the fetch when the dialog opens never fires (the fragment was
+ * imported, not rendered by the page's own JS), so the dialog stays on the
+ * loading spinner and the select-panel eventually surfaces its error state.
+ * Flipping loading to "eager" runs the fragment's attributeChangedCallback
+ * in the page's main world and starts the fetch.
+ */
+function bindUserListMenuFragmentLoad(): void {
+  document.addEventListener(
+    "click",
+    (ev) => {
+      const target = ev.target as Element | null;
+      const btn =
+        target && target.closest
+          ? target.closest(`#${SECTION_ID} user-list-menu button`)
+          : null;
+      if (!btn) return;
+      setTimeout(() => {
+        try {
+          const menu = btn.closest("user-list-menu");
+          const fragment = menu?.querySelector(
+            "include-fragment[loading='lazy']",
+          );
+          if (fragment) fragment.setAttribute("loading", "eager");
+        } catch {}
+      }, 100);
+    },
+    true,
+  );
+}
+
+/**
  * Re-fetch the first feed page and replace the injected items so state
  * changes (star, follow, list) are reflected without a full page reload.
  */
@@ -387,6 +420,7 @@ export function startHomeFeed({ onItems }: HomeFeedOptions = {}): void {
   started = true;
   bindPagination(onItems);
   bindFeedFormActions(onItems);
+  bindUserListMenuFragmentLoad();
   void injectFeed(onItems);
 
   const onNav = () => {
