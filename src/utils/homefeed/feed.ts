@@ -13,6 +13,7 @@ const SECTION_ID = "gh-utils-home-feed";
 const LIST_CLASS = "gh-utils-feed-list";
 const CONDUIT_URL = "/conduit/for_you_feed?source=feed_page";
 const FETCH_HEADERS = { Accept: "*/*", "X-Requested-With": "XMLHttpRequest" };
+const PAGES_ATTR = "data-gh-utils-pages";
 
 interface HomeFeedOptions {
   onItems?: (root: HTMLElement) => void;
@@ -71,6 +72,32 @@ export function extractFeedNodes(doc: Document): FeedNodes {
     }
   }
   return { items, moreForm };
+}
+
+/**
+ * Fetch up to `pageCount` feed pages by following the "More" form chain, so
+ * a refresh can keep every page the user already expanded.
+ */
+export async function fetchFeedPages(
+  pageCount: number,
+): Promise<FeedNodes & { pages: number }> {
+  const items: Element[] = [];
+  let moreForm: HTMLFormElement | null = null;
+  let url: string | null = CONDUIT_URL;
+  let pages = 0;
+  while (url && pages < pageCount) {
+    const page = extractFeedNodes(await fetchFeedDocument(url));
+    items.push(...page.items);
+    moreForm = page.moreForm;
+    pages++;
+    url = moreForm?.getAttribute("action") ?? null;
+  }
+  return { items, moreForm, pages };
+}
+
+function loadedPageCount(section: HTMLElement): number {
+  const count = Number(section.getAttribute(PAGES_ATTR));
+  return Number.isInteger(count) && count > 0 ? count : 1;
 }
 
 function documentHasFeedStyles(): boolean {
@@ -159,6 +186,7 @@ async function loadMore(
     for (const node of items) list.appendChild(importFeedNode(node));
     if (moreForm) form.replaceWith(importFeedNode(moreForm));
     else form.remove();
+    section.setAttribute(PAGES_ATTR, String(loadedPageCount(section) + 1));
     if (items.length) notifyItems(onItems, section);
   } catch {
     if (btn) {
@@ -355,8 +383,9 @@ function bindUserListMenuFragmentLoad(): void {
 }
 
 /**
- * Re-fetch the first feed page and replace the injected items so state
- * changes (star, follow, list) are reflected without a full page reload.
+ * Re-fetch as many feed pages as are currently shown and replace the
+ * injected items so state changes (star, follow, list) are reflected without
+ * a full page reload or collapsing pages loaded with "More".
  */
 async function refreshFeed(
   onItems: ((root: HTMLElement) => void) | undefined,
@@ -366,9 +395,11 @@ async function refreshFeed(
   const list = section.querySelector(`.${LIST_CLASS}`) as HTMLElement | null;
   if (!list) return;
   try {
-    const doc = await fetchFeedDocument(CONDUIT_URL);
-    const { items, moreForm } = extractFeedNodes(doc);
+    const { items, moreForm, pages } = await fetchFeedPages(
+      loadedPageCount(section),
+    );
     if (!items.length) return;
+    section.setAttribute(PAGES_ATTR, String(pages));
     while (list.firstChild) list.removeChild(list.firstChild);
     for (const node of items) list.appendChild(importFeedNode(node));
     const oldMore = section.querySelector("form.ajax-pagination-form");
@@ -417,6 +448,7 @@ async function injectFeed(
     if (!items.length) return;
 
     const section = buildSection();
+    section.setAttribute(PAGES_ATTR, "1");
     const list = section.querySelector(`.${LIST_CLASS}`) as HTMLElement;
     for (const node of items) list.appendChild(importFeedNode(node));
     if (moreForm) section.appendChild(importFeedNode(moreForm));
